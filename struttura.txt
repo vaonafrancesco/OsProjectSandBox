@@ -1,0 +1,71 @@
+.
+├── 2026-project-2.pdf
+├── code
+│   ├── include
+│   │   ├── common.h
+│   │   ├── controller.h
+│   │   ├── device_types.h
+│   │   ├── device.h
+│   │   ├── error_codes.h
+│   │   ├── ipc.h
+│   │   ├── message_types.h
+│   │   ├── parser.h
+│   │   ├── registry.h
+│   │   ├── routing.h
+│   │   ├── timer.h
+│   │   └── utils.h
+│   ├── Makefile
+│   ├── scripts
+│   │   ├── cleanup_ipc.sh
+│   │   ├── manual_interaction.sh
+│   │   ├── run_basic_scenario.sh
+│   │   ├── run_crash_scenario.sh
+│   │   ├── run_demo.sh
+│   │   └── run_override_scenario.sh
+│   ├── src
+│   │   ├── controller
+│   │   │   ├── commands.c
+│   │   │   ├── controller.c
+│   │   │   ├── main.c
+│   │   │   ├── parser.c
+│   │   │   └── repl.c
+│   │   ├── core
+│   │   │   ├── device_common.c
+│   │   │   ├── errors.c
+│   │   │   ├── hierarchy.c
+│   │   │   ├── registry.c
+│   │   │   ├── routing.c
+│   │   │   └── serialization.c
+│   │   ├── devices
+│   │   │   ├── bulb.c
+│   │   │   ├── controller_device.c
+│   │   │   ├── fridge.c
+│   │   │   ├── hub.c
+│   │   │   ├── timer.c
+│   │   │   └── window.c
+│   │   ├── ipc
+│   │   │   ├── event_loop.c
+│   │   │   ├── fifo.c
+│   │   │   ├── ipc_common.c
+│   │   │   ├── message.c
+│   │   │   └── request_reply.c
+│   │   ├── manual
+│   │   │   └── manual_client.c
+│   │   └── utils
+│   │       ├── cleanup.c
+│   │       ├── logging.c
+│   │       ├── random_delay.c
+│   │       └── time_utils.c
+│   └── tests
+│       ├── test_cascade_delete.sh
+│       ├── test_crash_handling.sh
+│       ├── test_cycle_detection.sh
+│       ├── test_linking.sh
+│       ├── test_override.sh
+│       └── test_timer_validation.sh
+├── progetto_domotica_design.md
+├── PROGETTO_WIKI.md
+├── README.md
+└── struttura.txt
+
+12 directories, 57 files
