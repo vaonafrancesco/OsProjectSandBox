@@ -2,16 +2,6 @@
 #define PROTOCOL_H
 
 
-//ERROR CODES: Must match EXACTLY with the numeric values used in Bash.
-// naming convention: UPPER_SNAKE_CASE
-
-#define OK                      0
-#define DEVICE_NOT_FOUND        1
-#define INVALID_COMMAND         2
-#define LINK_FAILED             3
-#define DEVICE_TYPE_MISMATCH    4
-#define IPC_ERROR               5
-#define CYCLE_DETECTED          6
 
 //SYSTEM PATHS AND PREFIXES
 
@@ -40,6 +30,10 @@
 
 // TIMEOUT CONFIGURATION: Must be > 3 to account or the mandatory 1-3s delay of devices
 #define TIMEOUT_DEVICE 7
+
+// MESSAGE KINDS for request-reply pattern
+#define MSG_REQUEST         1
+#define MSG_RESPONSE        2
 
 
 #endif

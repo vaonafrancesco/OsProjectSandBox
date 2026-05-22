@@ -7,13 +7,15 @@
 
 #include "../../include/protocol.h"
 #include "../../include/ipc.h"
+#include "../../include/error_codes.h"
+
 
 //ipc_recv_message
 //reads a raw string from the FIFO and parses it into the domo_message struct
 // format: SENDER_ID|COMMAND|TARGET_ID|PAYLOAD
 
 int ipc_recv_message(int fd_in, domo_message *msg){
-    if (fd_in <0 || msg == NULL) return IPC_ERROR;
+    if (fd_in <0 || msg == NULL) return ERR_IPC_FAILURE;
 
     char buffer[MAX_MSG_LEN];
 	memset(buffer, 0, sizeof(buffer));
@@ -21,7 +23,7 @@ int ipc_recv_message(int fd_in, domo_message *msg){
 	// REad the incoming string from the FIFO
 	ssize_t bytes_read = read(fd_in, buffer, sizeof(buffer)-1);
 	if (bytes_read <=0){
-		return IPC_ERROR; //error or empty read
+		return ERR_IPC_FAILURE; //error or empty read
 	}
 	
 	
@@ -38,7 +40,7 @@ int ipc_recv_message(int fd_in, domo_message *msg){
 	
 	// validate that the mandatory fields are present
 	if(!sender || !cmd || !target){
-	return IPC_ERROR;
+	return ERR_IPC_FAILURE;
 	}
 	
 	// Populate the domo_message structure safely
@@ -66,7 +68,7 @@ int ipc_recv_message(int fd_in, domo_message *msg){
 //Uses O_NONBLOCK to prevent the process from hanging if the target device crashed and is not reading FIFO.
 
 int ipc_send_message(const domo_message *msg){
-    if(msg == NULL) return IPC_ERROR;
+    if(msg == NULL) return ERR_IPC_FAILURE;
 
     char fifo_path[256];
 	snprintf(fifo_path, sizeof(fifo_path), "%s%d", FIFO_PATH_PREFIX, msg->target_id);
@@ -77,9 +79,9 @@ int ipc_send_message(const domo_message *msg){
 	if(fd_out< 0){
 		if(errno == ENXIO){
 			//No reader on other side
-			return DEVICE_NOT_FOUND;
+			return ERR_DEVICE_NOT_FOUND;
 		}
-		return IPC_ERROR;
+		return ERR_IPC_FAILURE;
 	}
 	
 	//format the message into the required protocol string
@@ -89,7 +91,7 @@ int ipc_send_message(const domo_message *msg){
 	// check if string is interrupted in the middle
 	if(len>=(int)sizeof(buffer)){
 		close(fd_out);
-		return IPC_ERROR;
+		return ERR_IPC_FAILURE;
 	}
 	
 	//write the formatted string to the FIFO
@@ -97,7 +99,7 @@ int ipc_send_message(const domo_message *msg){
 	close(fd_out); //Always cose the write end when done
 	
 	if(written != len){
-	return IPC_ERROR;
+	return ERR_IPC_FAILURE;
 	}
 	
 	return OK;

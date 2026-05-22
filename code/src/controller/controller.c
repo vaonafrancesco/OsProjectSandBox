@@ -12,6 +12,7 @@
 #include "controller.h"
 #include "error_codes.h"
 #include "ipc.h"
+#include "routing.h"
 
 static int ensure_runtime_dirs(void) {
     if (mkdir(RUNTIME_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
@@ -210,8 +211,8 @@ int controller_list_devices(controller *controller) {
 
 int controller_info_device(controller *controller, device_id id) {
     const controller_device_entry *dev;
-    message req;
-    message resp;
+    domo_message req;
+    domo_message resp;
     char reply_fifo[PATH_MAX];
     int rc;
 
@@ -226,7 +227,7 @@ int controller_info_device(controller *controller, device_id id) {
 
     memset(&req, 0, sizeof(req));
     req.kind = MSG_REQUEST;
-    req.cmd = CMD_INFO;
+    snprintf(req.command, sizeof(req.command), "%s", CMD_INFO);    
     req.src_id = CONTROLLER_ID;
     req.dst_id = id;
     req.src_pid = getpid();
@@ -252,8 +253,8 @@ int controller_info_device(controller *controller, device_id id) {
 
 int controller_switch_device(controller *controller, device_id id, const char *label, const char *pos) {
     const controller_device_entry *dev;
-    message req;
-    message resp;
+    domo_message req;
+    domo_message resp;
     char reply_fifo[PATH_MAX];
     int rc;
 
@@ -268,7 +269,7 @@ int controller_switch_device(controller *controller, device_id id, const char *l
 
     memset(&req, 0, sizeof(req));
     req.kind = MSG_REQUEST;
-    req.cmd = CMD_SWITCH;
+    snprintf(req.command, sizeof(req.command), "%s", CMD_SWITCH);
     req.src_id = CONTROLLER_ID;
     req.dst_id = id;
     req.src_pid = getpid();

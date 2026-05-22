@@ -3,6 +3,7 @@
 
 #include "../../include/protocol.h"
 #include "../../include/routing.h"
+#include "../../include/error_codes.h"
 
 // Access the global table defined and initialized in routing.cex
 extern routing_node routing_table[MAX_DEVICES];
@@ -11,7 +12,7 @@ extern routing_node routing_table[MAX_DEVICES];
 //VAlidates if a device type is allowed to have children
 
 bool is_control_device(device_type type){
-    return (type == DEV_CONTROLLER || type == DEV_HUB || type == DEV_TIMER);
+    return (type == DEVICE_CONTROLLER || type == DEVICE_HUB || type == DEVICE_TIMER);
 }
 
 //get_node_index (Private Helper)
@@ -33,19 +34,19 @@ static int get_node_index(int id){
 int routing_link_devices(int child_id, int parent_id){
     // you can't link a device to itself
     if (child_id == parent_id){
-        return LINK_FAILED;
+        return ERR_SELF_LINK;
     }
     int child_idx = get_node_index(child_id);
 	int parent_idx = get_node_index(parent_id);
 	
 	// Ensure both devices actually exist in the registry
 	if (child_idx == -1 || parent_idx == -1){
-		return DEVICE_NOT_FOUND;
+		return ERR_DEVICE_NOT_FOUND;
 	}
 	
 	// Validate Parent type (only Controller, Hub and Timer can be parents)
 	if (!is_control_device(routing_table[parent_idx].type)){
-		return DEVICE_TYPE_MISMATCH;
+		return ERR_DEVICE_TYPE_MISMATCH;
 	}
 	
 	// Cycle Detection Algorithm
@@ -58,7 +59,7 @@ int routing_link_devices(int child_id, int parent_id){
 	while (current_ancestor_id != CONTROLLER_ID){
 		
 		if(current_ancestor_id == child_id) {
-			return CYCLE_DETECTED;
+			return ERR_CYCLE_DETECTED;
 		}
 		
 		int ancestor_idx = get_node_index(current_ancestor_id);

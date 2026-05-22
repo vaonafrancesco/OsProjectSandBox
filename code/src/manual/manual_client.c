@@ -57,20 +57,17 @@ static int build_manual_request(device_id id,
                                 const char *command,
                                 const char *param1,
                                 const char *param2,
-                                message *msg) {
+                                domo_message *msg) {
     if (msg == NULL || command == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
 
     memset(msg, 0, sizeof(*msg));
-    msg->kind = MSG_REQUEST;
-    msg->src_id = CONTROLLER_ID;
-    msg->dst_id = id;
-    msg->src_pid = getpid();
-    msg->request_id = (int)getpid();
+    snprintf(msg->sender_id, sizeof(msg->sender_id), "%s", EXT_SENDER_ID);
+    msg->target_id = id;
 
     if (strcmp(command, "info") == 0) {
-        msg->cmd = CMD_INFO;
+        snprintf(msg->command, sizeof(msg->command), "%s", CMD_INFO);
         return OK;
     }
 
@@ -79,9 +76,9 @@ static int build_manual_request(device_id id,
             return ERR_INVALID_PARAMETERS;
         }
 
-        msg->cmd = CMD_SWITCH;
-        snprintf(msg->arg1, sizeof(msg->arg1), "%s", param1);
-        snprintf(msg->arg2, sizeof(msg->arg2), "%s", param2);
+        
+        snprintf(msg->command, sizeof(msg->command), "%s", CMD_SWITCH);
+        snprintf(msg->payload, sizeof(msg->payload), "%s %s", param1, param2);
         return OK;
     }
 
@@ -90,9 +87,9 @@ static int build_manual_request(device_id id,
             return ERR_INVALID_PARAMETERS;
         }
 
-        msg->cmd = CMD_SET_PARAM;
-        snprintf(msg->arg1, sizeof(msg->arg1), "%s", param1);
-        snprintf(msg->arg2, sizeof(msg->arg2), "%s", param2);
+        
+        snprintf(msg->command, sizeof(msg->command), "%s", "SET");
+        snprintf(msg->payload, sizeof(msg->payload), "%s %s", param1, param2);
         return OK;
     }
 
@@ -101,10 +98,8 @@ static int build_manual_request(device_id id,
 
 int main(int argc, char **argv) {
     device_id id;
-    message request;
-    message response;
+    domo_message request;
     char request_fifo[PATH_MAX];
-    char reply_fifo[PATH_MAX];
     int rc;
 
     if (argc < 3) {
@@ -134,26 +129,13 @@ int main(int argc, char **argv) {
         return rc;
     }
 
-    rc = make_reply_fifo_path(getpid(), request.request_id, reply_fifo, sizeof(reply_fifo));
+    rc = ipc_send_message(&request);
     if (rc != OK) {
-        fprintf(stderr, "Cannot build reply fifo path: %s\n", error_str(rc));
+        fprintf(stderr, "IPC send failed: %s\n", error_str(rc));
         return rc;
     }
 
-    rc = request_reply(request_fifo, reply_fifo, &request, &response);
-    if (rc != OK) {
-        fprintf(stderr, "IPC request failed: %s\n", error_str(rc));
-        return rc;
-    }
-
-    if (response.status != OK) {
-        fprintf(stderr, "Device error: %s\n", error_str(response.status));
-        return response.status;
-    }
-
-    if (response.payload[0] != '\0') {
-        printf("%s\n", response.payload);
-    }
+    printf("Manual command sent successfully to device %d\n", id);
 
     return OK;
 }

@@ -4,20 +4,22 @@
 
 #include "../../include/protocol.h"
 #include "../../include/ipc.h"
+#include "../../include/error_codes.h"
+
 
 // serialize_message
 // converts a domo_message struct into a formatted protocol string.
 // format: SENDER_ID|COMMAND|TARGET_ID|PAYLOAD
 
 int serialize_message(const domo_message *msg, char *buffer, size_t max_len){
-    if (msg == NULL || buffer == NULL) return IPC_ERROR;
+    if (msg == NULL || buffer == NULL) return ERR_IPC_FAILURE;
 
     // Format the message into the required protocol string
 	int len = snprintf(buffer, max_len, "%s|%s|%d|%s\n", msg->sender_id, msg->command, msg->target_id, msg->payload);
 	
 	// check if string is interrupted in the middle
 	if(len<0 || (size_t)len >=max_len){
-		return IPC_ERROR;
+		return ERR_IPC_FAILURE;
 	}
 	
 	return OK;
@@ -27,7 +29,7 @@ int serialize_message(const domo_message *msg, char *buffer, size_t max_len){
 
 int deserialize_message(char *buffer, domo_message *msg){
     
-    if (buffer == NULL || msg == NULL) return IPC_ERROR;
+    if (buffer == NULL || msg == NULL) return ERR_IPC_FAILURE;
     
     //ensure no trailing newline interferes with parsing
 	buffer[strcspn(buffer, "\n")] = '\0';
@@ -41,7 +43,7 @@ int deserialize_message(char *buffer, domo_message *msg){
 	
 	// validate that the mandatory fields are present
 	if(!sender || !cmd || !target){
-	return IPC_ERROR;
+	return ERR_IPC_FAILURE;
 	}
 	
 	// Populate the domo_message structure safely

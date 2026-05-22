@@ -6,6 +6,8 @@
 
 #include "../../include/protocol.h"
 #include "../../include/ipc.h"
+#include "../../include/error_codes.h"
+
 
 //ipc_send_request_and_wait
 //sends a request message and waits for a reply on the provided fd_in.
@@ -14,13 +16,13 @@
 int ipc_send_request_and_wait(const domo_message *request, domo_message *response, int fd_in){
 
     if(request == NULL || response == NULL || fd_in <0){
-		return IPC_ERROR;
+		return ERR_IPC_FAILURE;
 	}
 	
 	// Send the request message
 	int send_status = ipc_send_message(request);
 	if(send_status != OK){
-		return send_status;		//return DEVICE_NOT_FOUND or IPC_ERROR
+		return send_status;		//return DEVICE_NOT_FOUND or ERR_IPC_FAILURE
 	}
 	
 	// Prepare the file descriptor set for select()
@@ -40,11 +42,11 @@ int ipc_send_request_and_wait(const domo_message *request, domo_message *respons
 	
 	if (retval == -1){
 		perror("Error in select() during request-reply");
-		return IPC_ERROR;
+		return ERR_IPC_FAILURE;
 	} else if(retval == 0){
 		//timeout exired, no response received
 		printf("[IPC] Error: Timeout exired waiting for device %d to reply. \n", request->target_id);
-		return IPC_ERROR;
+		return ERR_IPC_FAILURE;
 	}
 	
 	// Data is ready to be read from the FIFO

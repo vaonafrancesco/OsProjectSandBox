@@ -3,21 +3,9 @@
 
  #include <stdbool.h>
  #include "protocol.h"
-
+ #include "device.h"
  // Maximum number of devices supported by the system
  #define MAX_DEVICES 128
-
- //device types: used to prevent bulb, window, or fridge from becoming parents
-
- typedef enum {
-    DEV_CONTROLLER,
-    DEV_HUB,
-    DEV_TIMER,
-    DEV_BULB,
-    DEV_WINDOW,
-    DEV_FRIDGE,
-    DEV_UNKNOWN
- } device_type;
 
  //routing node: represents a single device inside the hierarchy routing table.
  typedef struct{
@@ -41,6 +29,17 @@
 
  bool is_control_device(device_type type);
  int routing_link_devices(int child_id, int parent_id);
+
+  //Helper to convert between device_type and string for routing(I still have to implement this)
+ const char *device_typde_to_str(device_type type);
+
+ // Helper functions for request-reply pattern (used by controller and devices)
+ int make_device_fifo_path(device_id id, char *path, size_t path_len);
+ int make_reply_fifo_path(pid_t pid, int request_id, char *path, size_t path_len);
+ int request_reply(const char *target_fifo, const char *reply_fifo,
+                  const domo_message *request, domo_message *response);
+ int send_message_to_fifo(const char *fifo_path, const domo_message *msg);
+
 
 
  #endif

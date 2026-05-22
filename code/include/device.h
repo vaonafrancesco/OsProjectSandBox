@@ -10,7 +10,8 @@ typedef enum {
     DEVICE_TIMER,
     DEVICE_BULB,
     DEVICE_WINDOW,
-    DEVICE_FRIDGE
+    DEVICE_FRIDGE, 
+    DEVICE_UNKNOWN
 } device_type ;
 
 typedef struct {
@@ -27,7 +28,7 @@ typedef struct {
 typedef struct device device ;
 
 typedef int (*device_init)(device *dev);
-typedef int (*device_handle)(device *dev,const message *req,message *resp);
+typedef int (*device_handle)(device *dev,const domo_message *req,domo_message *resp);
 typedef int (*device_destroy)(device *dev);
 
 struct device_impl;

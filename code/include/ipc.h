@@ -2,6 +2,7 @@
 #define IPC_H
 
 #include <stdbool.h>
+#include <sys/types.h>
 #include "protocol.h"
 
 //message structure
@@ -11,6 +12,16 @@ typedef struct {
     char command[32];           //e.g., "SWITCH, "LINK, "INFO"
     int target_id;              //logical target device ID
     char payload[MAX_MSG_LEN];  // command-specific data (e.g., "power on")
+
+    // Additional fields for request-reply pattern
+    int kind;                   // MSG_REQUEST or MSG_RESPONSE
+    int src_id;                 // source device ID
+    int dst_id;                 // destination device ID
+    pid_t src_pid;              // source process ID
+    int request_id;             // unique request ID for reply matching
+    char arg1[32];              // first argument (e.g., switch label)
+    char arg2[32];              // second argument (e.g., switch position)
+    int status;                 // response status (error code)
 }domo_message;
 
 // IPC and FIFO management (from fifo.c)

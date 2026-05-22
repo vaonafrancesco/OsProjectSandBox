@@ -8,6 +8,8 @@
 
 #include "../../include/protocol.h"
 #include "../../include/ipc.h"
+#include "../../include/error_codes.h"
+
 
 //ipc_open_fifo_read
 //Creates and opens the FIFO for reading safely.
@@ -19,7 +21,7 @@ int ipc_open_fifo_read(int my_id, int *keepalive_fd){
     // create the FIFO. If it exists already (EEXIST), proceed normally
 	if(mkfifo(fifo_path, 0666)==-1 && errno != EEXIST){
 		perror("Error creating FIFO");
-		return IPC_ERROR;
+		return ERR_IPC_FAILURE;
 	}
 	
 	// Open the FIFO for reading in non-blocking mode to prevent the process from hanging indefinitely if no writer is currently attached.
@@ -27,7 +29,7 @@ int ipc_open_fifo_read(int my_id, int *keepalive_fd){
 	int fd_in = open(fifo_path, O_RDONLY | O_NONBLOCK);
 	if(fd_in<0){
 		perror("Error opening FIFO for read");
-		return IPC_ERROR;
+		return ERR_IPC_FAILURE;
 	}
 	
 	// Open a persistent file descriptor in write mode to keep the pipe open.
