@@ -12,6 +12,7 @@
 #include "ipc.h"
 #include "routing.h"
 #include "protocol.h"
+#include "utils.h"
 
 static volatile sig_atomic_t keep_running = 1;
 
@@ -25,14 +26,6 @@ typedef struct {
 static void on_sigterm(int sig) {
     (void)sig;
     keep_running = 0;
-}
-
-static void simulate_delay(void) {
-    int delay = MIN_RANDOM_DELAY_S;
-    if (MAX_RANDOM_DELAY_S > MIN_RANDOM_DELAY_S) {
-        delay += rand() % (MAX_RANDOM_DELAY_S - MIN_RANDOM_DELAY_S + 1);
-    }
-    sleep((unsigned int)delay);
 }
 
 static const char *state_str(state state) {
@@ -68,12 +61,11 @@ static int handle_request(bulb_ctx *ctx, const domo_message *req, domo_message *
     resp->request_id = req->request_id;
     resp->status = OK;
 
-    simulate_delay();
+    simulate_random_delay();
 
     if (strcmp(req->command, CMD_INFO) == 0) {
         return build_info_payload(ctx, resp->payload, sizeof(resp->payload));
     }
-
     if (strcmp(req->command, CMD_SWITCH) == 0) {
             if (strcmp(req->arg1, "power") != 0) {
                 resp->status = ERR_INVALID_PARAMETERS;
@@ -93,7 +85,8 @@ static int handle_request(bulb_ctx *ctx, const domo_message *req, domo_message *
                      "bulb %d switched %s", ctx->id, state_str(ctx->state));
             return OK;
         }
-        
+
+
             resp->status = ERR_INVALID_COMMAND;
             return OK;
 }
