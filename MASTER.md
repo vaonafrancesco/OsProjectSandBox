@@ -253,6 +253,36 @@ All'arrivo del segnale, usa `waitpid(..., WNOHANG)` per identificare quale proce
 | Orari Timer non validi (`begin > end`, formato errato, orari nel passato) | Errore esplicito, comando rifiutato |
 
 ---
+### 7.4 Nomenclatura variabili
+
+Per garantire coerenza e facilitare l'integrazione del codice tra i membri del gruppo, il codice sorgente deve rispettare rigorosamente le seguenti convenzioni POSIX/C:
+
+* **Variabili Locali e Funzioni:** `snake_case` (tutto minuscolo con underscore).
+  * *Esempi:* `parse_command()`, `pipe_fd`, `child_pid`.
+  * *Nota:* I nomi delle funzioni devono esprimere un'azione (verbo).
+
+* **Costanti, Macro (#define) ed Enum:** `UPPER_SNAKE_CASE` (tutto maiuscolo con underscore).
+  * *Esempi:* `MAX_DEVICES`, `BUFFER_SIZE`, `MSG_TYPE_ACK`.
+
+* **Strutture e Tipi Definiti (Typedef):** `snake_case` con suffisso obbligatorio `_t`.
+  * *Esempi:* `device_node_t`, `status_t`.
+
+* **Variabili Globali:** Da evitare. Se architetturalmente inevitabili, prefisso `g_`.
+  * *Esempi:* `g_active_connections`.
+
+* **Nomi dei File:** `snake_case` con estensioni standard.
+  * *Esempi:* `device_manager.c`, `ipc_utils.h`.
+
+* **Header Guards:** Obbligatori in ogni file `.h`, utilizzando il nome del file in `UPPER_SNAKE_CASE`.
+  * *Esempio:*
+    ```c
+    #ifndef IPC_UTILS_H
+    #define IPC_UTILS_H
+    /* dichiarazioni */
+    #endif
+    ```
+
+---
 
 ## 8. Interfacce Utente
 

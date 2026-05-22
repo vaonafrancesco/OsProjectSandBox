@@ -1,22 +1,22 @@
 #include "error_codes.h"
 
-const char *domo_error_str(int code) {
+const char *error_str(int code) {
     switch (code) {
-        case DOMO_OK: return "OK";
-        case DOMO_ERR_DEVICE_NOT_FOUND: return "DEVICE_NOT_FOUND";
-        case DOMO_ERR_INVALID_COMMAND: return "INVALID_COMMAND";
-        case DOMO_ERR_IPC_FAILURE: return "IPC_FAILURE";
-        case DOMO_ERR_INVALID_PARAMETERS: return "INVALID_PARAMETERS";
-        case DOMO_ERR_LINK_FAILED: return "LINK_FAILED";
-        case DOMO_ERR_DEVICE_TYPE_MISMATCH: return "DEVICE_TYPE_MISMATCH";
-        case DOMO_ERR_ALREADY_LINKED: return "ALREADY_LINKED";
-        case DOMO_ERR_SELF_LINK: return "SELF_LINK";
-        case DOMO_ERR_CYCLE_DETECTED: return "CYCLE_DETECTED";
-        case DOMO_ERR_NOT_ALLOWED: return "NOT_ALLOWED";
-        case DOMO_ERR_CHILD_CRASHED: return "CHILD_CRASHED";
-        case DOMO_ERR_TIMEOUT: return "TIMEOUT";
-        case DOMO_ERR_INVALID_STATE: return "INVALID_STATE";
-        case DOMO_ERR_INVALID_TIME: return "INVALID_TIME";
-        default: return "SYSTEM_ERROR";
+        case OK: return "OK";
+        case ERR_DEVICE_NOT_FOUND: return "Device not found. Check the name and try again.";
+        case ERR_INVALID_COMMAND: return "This command is not supported.";
+        case ERR_IPC_FAILURE: return "Communication failed. Please try again.";
+        case ERR_INVALID_PARAMETERS: return "The parameters are not valid try again.";
+        case ERR_LINK_FAILED: return "Could not create the link. Please try again.";
+        case ERR_DEVICE_TYPE_MISMATCH: return "The selected devices are not compatible.";
+        case ERR_ALREADY_LINKED: return "These devices are already linked.";
+        case ERR_SELF_LINK: return "Self link not allowed. A device cannot be linked to itself.";
+        case ERR_CYCLE_DETECTED: return "Cycle detected. Linking these devices would create an invalid loop.";
+        case ERR_NOT_ALLOWED: return "Operation not allowed. The action is forbidden in the current state.";
+        case ERR_CHILD_CRASHED: return "Child process crashed, restart the device and try again.";
+        case ERR_TIMEOUT: return "The operation has timed out, the request took too long to complete.";
+        case ERR_INVALID_STATE: return "The device is not in the correct state for this action.";
+        case ERR_INVALID_TIME: return "Invalid time value. Use a valid time format and try again.";
+        default: return "System error. Check logs or retry the operation.";
     }
 }

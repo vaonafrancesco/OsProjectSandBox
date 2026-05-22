@@ -6,7 +6,7 @@
 #include "error_codes.h"
 #include "parser.h"
 
-static device_type_t parse_device_type(const char *s) {
+static device_type parse_device_type(const char *s) {
     if (s == NULL) return -1;
     if (strcmp(s, "bulb") == 0) return DEVICE_BULB;
     if (strcmp(s, "hub") == 0) return DEVICE_HUB;
@@ -16,7 +16,7 @@ static device_type_t parse_device_type(const char *s) {
     return -1;
 }
 
-static device_id_t parse_id(const char *s) {
+static device_id parse_id(const char *s) {
     int id = -1;
     if (s != NULL) {
         sscanf(s, "%d", &id);
@@ -24,13 +24,13 @@ static device_id_t parse_id(const char *s) {
     return id;
 }
 
-int controller_run(controller_t *controller) {
-    char line[DOMO_LINE_MAX];
-    parsed_command_t cmd;
+int controller_run(controller *controller) {
+    char line[LINE_MAX];
+    parsed_command cmd;
     int rc;
 
     if (controller == NULL) {
-        return DOMO_ERR_INVALID_PARAMETERS;
+        return ERR_INVALID_PARAMETERS;
     }
 
     printf("Domotics controller started.\n");
@@ -45,7 +45,7 @@ int controller_run(controller_t *controller) {
         }
 
         rc = parse_command_line(line, &cmd);
-        if (rc != DOMO_OK) {
+        if (rc != OK) {
             fprintf(stderr, "Parse error.\n");
             continue;
         }
@@ -56,9 +56,9 @@ int controller_run(controller_t *controller) {
                 break;
 
             case PARSER_CMD_ADD: {
-                device_type_t type = parse_device_type(cmd.argv[0]);
+                device_type type = parse_device_type(cmd.argv[0]);
                 if (type < 0) {
-                    rc = DOMO_ERR_INVALID_PARAMETERS;
+                    rc = ERR_INVALID_PARAMETERS;
                 } else {
                     rc = controller_add_device(controller, type);
                 }
@@ -95,24 +95,24 @@ int controller_run(controller_t *controller) {
                 printf("  switch <id> <label> <pos>\n");
                 printf("  info <id>\n");
                 printf("  exit\n");
-                rc = DOMO_OK;
+                rc = OK;
                 break;
 
             case PARSER_CMD_EXIT:
                 controller->running = 0;
-                rc = DOMO_OK;
+                rc = OK;
                 break;
 
             default:
-                fprintf(stderr, "Invalid command.\n");
-                rc = DOMO_ERR_INVALID_COMMAND;
+                fprintf(stderr, "Command not valid.\n");
+                rc = ERR_INVALID_COMMAND;
                 break;
         }
 
-        if (rc != DOMO_OK) {
-            fprintf(stderr, "Error: %s\n", domo_error_str(rc));
+        if (rc != OK) {
+            fprintf(stderr, "Error: %s\n", error_str(rc));
         }
     }
 
-    return DOMO_OK;
+    return OK;
 }

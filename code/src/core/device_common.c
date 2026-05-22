@@ -1,6 +1,6 @@
 #include "device.h"
 
-const char *device_type_str(device_type_t type) {
+const char *device_type_str(device_type type) {
     switch (type) {
         case DEVICE_CONTROLLER: return "controller";
         case DEVICE_HUB: return "hub";
@@ -12,10 +12,10 @@ const char *device_type_str(device_type_t type) {
     }
 }
 
-bool device_is_control(device_type_t type) {
+bool device_is_control(device_type type) {
     return type == DEVICE_CONTROLLER || type == DEVICE_HUB || type == DEVICE_TIMER;
 }
 
-bool device_is_interaction(device_type_t type) {
+bool device_is_interaction(device_type type) {
     return type == DEVICE_BULB || type == DEVICE_WINDOW || type == DEVICE_FRIDGE;
 }

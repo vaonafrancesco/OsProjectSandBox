@@ -11,46 +11,54 @@ typedef enum {
     DEVICE_BULB,
     DEVICE_WINDOW,
     DEVICE_FRIDGE
-} device_type_t;
+} device_type ;
 
 typedef struct {
-    device_id_t id;
-    device_type_t type;
+    device_id id;
+    device_type type;
     pid_t pid;
-    device_id_t logical_parent_id;
-    domo_state_t state;
+    device_id logical_parent_id;
+    state state;
     bool manual_override;
-    char fifo_path[DOMO_PATH_MAX];
-    char name[DOMO_NAME_MAX];
-} device_info_t;
+    char fifo_path[PATH_MAX];
+    char name[NAME_MAX];
+} device_info ;
 
-typedef struct device device_t;
+typedef struct device device ;
 
-typedef int (*device_init_fn)(device_t *dev);
-typedef int (*device_handle_fn)(device_t *dev, const domo_message_t *req, domo_message_t *resp);
-typedef int (*device_destroy_fn)(device_t *dev);
+typedef int (*device_init)(device *dev);
+typedef int (*device_handle)(device *dev,const message *req,message *resp);
+typedef int (*device_destroy)(device *dev);
+
+struct device_impl;
+
 
 struct device {
-    device_info_t info;
+    device_info info;
 
-    int child_count;
-    device_id_t child_ids[32];
+    size_t child_count;
+    size_t child_capacity;
+    device_id *child_ids;
 
-    char registry_snapshot[DOMO_PAYLOAD_MAX];
 
-    device_init_fn init;
-    device_handle_fn handle_message;
-    device_destroy_fn destroy;
 
-    void *impl;
+
+    char *registry_snapshot ;
+    size_t registry_snapshot_size;
+
+    device_init init;
+    device_handle handle_message;
+    device_destroy destroy;
+
+    struct device_impl *impl;
 };
 
-const char *device_type_str(device_type_t type);
-bool device_is_control(device_type_t type);
-bool device_is_interaction(device_type_t type);
+const char *device_type_str(device_type type) ;
+bool device_is_control(device_type type);
+bool device_is_interaction(device_type type);
 
-int device_build_info_payload(const device_t *dev, char *buffer, size_t buffer_len);
-int device_apply_switch(device_t *dev, const char *label, const char *position);
-int device_set_parameter(device_t *dev, const char *key, const char *value);
+int device_build_info_payload(const device *dev, char *buffer, size_t buffer_len);
+int device_apply_switch(device *dev,const char *label,const char *position);
+int device_set_parameter(device *dev, const char *key,const char *value);
 
 #endif

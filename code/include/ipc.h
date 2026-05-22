@@ -1,52 +1,36 @@
 #ifndef IPC_H
 #define IPC_H
 
-#include "common.h"
-#include "error_codes.h"
+#include <stdbool.h>
+#include "protocol.h"
 
-typedef enum {
-    DOMO_MSG_INVALID = 0,
-    DOMO_MSG_REQUEST,
-    DOMO_MSG_RESPONSE,
-    DOMO_MSG_EVENT
-} domo_msg_kind_t;
-
-typedef enum {
-    DOMO_CMD_NONE = 0,
-    DOMO_CMD_PING,
-    DOMO_CMD_INFO,
-    DOMO_CMD_SWITCH,
-    DOMO_CMD_SET_PARAM,
-    DOMO_CMD_GET_STATE,
-    DOMO_CMD_LINK_PARENT,
-    DOMO_CMD_ADD_CHILD,
-    DOMO_CMD_REMOVE_CHILD,
-    DOMO_CMD_TERMINATE,
-    DOMO_CMD_NOTIFY_OVERRIDE,
-    DOMO_CMD_NOTIFY_CRASH
-} domo_cmd_t;
+//message structure
 
 typedef struct {
-    domo_msg_kind_t kind;
-    domo_cmd_t cmd;
-    device_id_t src_id;
-    device_id_t dst_id;
-    pid_t src_pid;
-    int request_id;
-    int status;
-    char arg1[DOMO_LABEL_MAX];
-    char arg2[DOMO_VALUE_MAX];
-    char payload[DOMO_PAYLOAD_MAX];
-} domo_message_t;
+    char sender_id[16];         //String: can be a numeric ID (e.g., "0") or "EXT"
+    char command[32];           //e.g., "SWITCH, "LINK, "INFO"
+    int target_id;              //logical target device ID
+    char payload[MAX_MSG_LEN];  // command-specific data (e.g., "power on")
+}domo_message;
 
-int domo_make_device_fifo_path(device_id_t id, char *buffer, size_t buffer_len);
-int domo_make_reply_fifo_path(pid_t pid, int request_id, char *buffer, size_t buffer_len);
+// IPC and FIFO management (from fifo.c)
+int ipc_open_fifo_read (int my_id, int *keepalive_fd);
 
-int domo_send_message(const char *fifo_path, const domo_message_t *msg);
-int domo_recv_message(int fd, domo_message_t *msg);
-int domo_request_reply(const char *request_fifo,
-                       const char *reply_fifo,
-                       const domo_message_t *request,
-                       domo_message_t *response);
+// MEssage formatting and parsing (from message.c)
+int ipc_recv_message(int fd_in, domo_message *msg);
+int ipc_send_message (const domo_message *msg);
+
+// Common IPC utilities (from ipc_common.c)
+void ipc_print_message(const domo_message *msg);
+void ipc_create_message(domo_message *msg, const char *sender, const char *cmd, int target, const char *payload);
+
+// REquest reply pattern (from request_reply.c)
+
+int ipc_send_request_and_wait(const domo_message *request, domo_message *response, int fd_in);
+
+//serialization and deserialization (from serialization.c)
+
+int serialize_message(const domo_message *msg, char *buffer, size_t max_len);
+int deserialize_message(char *buffer, domo_message *msg);
 
 #endif

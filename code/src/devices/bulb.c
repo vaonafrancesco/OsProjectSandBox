@@ -14,11 +14,11 @@
 static volatile sig_atomic_t keep_running = 1;
 
 typedef struct {
-    device_id_t id;
-    domo_state_t state;
+    device_id id;
+    state state;
     unsigned long usage_time;
-    char fifo_path[DOMO_PATH_MAX];
-} bulb_ctx_t;
+    char fifo_path[PATH_MAX];
+} bulb_ctx ;
 
 static void on_sigterm(int sig) {
     (void)sig;
@@ -26,95 +26,95 @@ static void on_sigterm(int sig) {
 }
 
 static void simulate_delay(void) {
-    int delay = DOMO_MIN_RANDOM_DELAY_S;
-    if (DOMO_MAX_RANDOM_DELAY_S > DOMO_MIN_RANDOM_DELAY_S) {
-        delay += rand() % (DOMO_MAX_RANDOM_DELAY_S - DOMO_MIN_RANDOM_DELAY_S + 1);
+    int delay = MIN_RANDOM_DELAY_S;
+    if (MAX_RANDOM_DELAY_S > MIN_RANDOM_DELAY_S) {
+        delay += rand() % (MAX_RANDOM_DELAY_S - MIN_RANDOM_DELAY_S + 1);
     }
     sleep((unsigned int)delay);
 }
 
-static const char *state_str(domo_state_t state) {
+static const char *state_str(state state) {
     switch (state) {
-        case DOMO_STATE_ON: return "on";
-        case DOMO_STATE_OFF: return "off";
+        case STATE_ON: return "on";
+        case STATE_OFF: return "off";
         default: return "unknown";
     }
 }
 
-static int build_info_payload(const bulb_ctx_t *ctx, char *buf, size_t len) {
+static int build_info_payload(const bulb_ctx *ctx, char *buf, size_t len) {
     if (ctx == NULL || buf == NULL) {
-        return DOMO_ERR_INVALID_PARAMETERS;
+        return ERR_INVALID_PARAMETERS;
     }
 
     snprintf(buf, len,
              "bulb id=%d state=%s time=%lu fifo=%s",
              ctx->id, state_str(ctx->state), ctx->usage_time, ctx->fifo_path);
-    return DOMO_OK;
+    return OK;
 }
 
-static int handle_request(bulb_ctx_t *ctx, const domo_message_t *req, domo_message_t *resp) {
+static int handle_request(bulb_ctx *ctx, const message *req, message *resp) {
     if (ctx == NULL || req == NULL || resp == NULL) {
-        return DOMO_ERR_INVALID_PARAMETERS;
+        return ERR_INVALID_PARAMETERS;
     }
 
     memset(resp, 0, sizeof(*resp));
-    resp->kind = DOMO_MSG_RESPONSE;
+    resp->kind = MSG_RESPONSE;
     resp->cmd = req->cmd;
     resp->src_id = ctx->id;
     resp->dst_id = req->src_id;
     resp->src_pid = getpid();
     resp->request_id = req->request_id;
-    resp->status = DOMO_OK;
+    resp->status = OK;
 
     simulate_delay();
 
     switch (req->cmd) {
-        case DOMO_CMD_INFO:
+        case CMD_INFO:
             return build_info_payload(ctx, resp->payload, sizeof(resp->payload));
 
-        case DOMO_CMD_SWITCH:
+        case CMD_SWITCH:
             if (strcmp(req->arg1, "power") != 0) {
-                resp->status = DOMO_ERR_INVALID_PARAMETERS;
-                return DOMO_OK;
+                resp->status = ERR_INVALID_PARAMETERS;
+                return OK;
             }
 
             if (strcmp(req->arg2, "on") == 0) {
-                ctx->state = DOMO_STATE_ON;
+                ctx->state = STATE_ON;
             } else if (strcmp(req->arg2, "off") == 0) {
-                ctx->state = DOMO_STATE_OFF;
+                ctx->state = STATE_OFF;
             } else {
-                resp->status = DOMO_ERR_INVALID_PARAMETERS;
-                return DOMO_OK;
+                resp->status = ERR_INVALID_PARAMETERS;
+                return OK;
             }
 
             snprintf(resp->payload, sizeof(resp->payload),
                      "bulb %d switched %s", ctx->id, state_str(ctx->state));
-            return DOMO_OK;
+            return OK;
 
         default:
-            resp->status = DOMO_ERR_INVALID_COMMAND;
-            return DOMO_OK;
+            resp->status = ERR_INVALID_COMMAND;
+            return OK;
     }
 }
 
-int bulb_device_main(device_id_t id) {
-    bulb_ctx_t ctx;
-    domo_message_t req;
-    domo_message_t resp;
+int bulb_device_main(device_id id) {
+    bulb_ctx ctx;
+    message req;
+    message resp;
     int fd;
     int dummy_fd;
 
     memset(&ctx, 0, sizeof(ctx));
     ctx.id = id;
-    ctx.state = DOMO_STATE_OFF;
+    ctx.state = STATE_OFF;
 
-    if (domo_make_device_fifo_path(id, ctx.fifo_path, sizeof(ctx.fifo_path)) != DOMO_OK) {
-        return DOMO_ERR_SYSTEM;
+    if (make_device_fifo_path(id, ctx.fifo_path, sizeof(ctx.fifo_path)) != OK) {
+        return ERR_SYSTEM;
     }
 
     unlink(ctx.fifo_path);
     if (mkfifo(ctx.fifo_path, 0666) != 0 && errno != EEXIST) {
-        return DOMO_ERR_SYSTEM;
+        return ERR_SYSTEM;
     }
 
     signal(SIGTERM, on_sigterm);
@@ -123,29 +123,29 @@ int bulb_device_main(device_id_t id) {
     fd = open(ctx.fifo_path, O_RDONLY);
     if (fd < 0) {
         unlink(ctx.fifo_path);
-        return DOMO_ERR_SYSTEM;
+        return ERR_SYSTEM;
     }
 
     dummy_fd = open(ctx.fifo_path, O_WRONLY | O_NONBLOCK);
 
     while (keep_running) {
-        int rc = domo_recv_message(fd, &req);
-        if (rc != DOMO_OK) {
+        int rc = recv_message(fd, &req);
+        if (rc != OK) {
             continue;
         }
 
         rc = handle_request(&ctx, &req, &resp);
-        if (rc != DOMO_OK) {
+        if (rc != OK) {
             continue;
         }
 
         if (req.payload[0] != '\0') {
-            rc = domo_send_message(req.payload, &resp);
+            rc = send_message(req.payload, &resp);
         } else {
-            char reply_fifo[DOMO_PATH_MAX];
-            rc = domo_make_reply_fifo_path(req.src_pid, req.request_id, reply_fifo, sizeof(reply_fifo));
-            if (rc == DOMO_OK) {
-                rc = domo_send_message(reply_fifo, &resp);
+            char reply_fifo[PATH_MAX];
+            rc = make_reply_fifo_path(req.src_pid, req.request_id, reply_fifo, sizeof(reply_fifo));
+            if (rc == OK) {
+                rc = send_message(reply_fifo, &resp);
             }
         }
 
@@ -155,5 +155,5 @@ int bulb_device_main(device_id_t id) {
     close(fd);
     if (dummy_fd >= 0) close(dummy_fd);
     unlink(ctx.fifo_path);
-    return DOMO_OK;
+    return OK;
 }

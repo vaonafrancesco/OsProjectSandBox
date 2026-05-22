@@ -13,14 +13,14 @@ typedef enum {
     PARSER_CMD_INFO,
     PARSER_CMD_EXIT,
     PARSER_CMD_HELP
-} parser_cmd_type_t;
+} parser_cmd_type ;
 
 typedef struct {
-    parser_cmd_type_t type;
-    char argv[5][DOMO_VALUE_MAX];
+    parser_cmd_type type;
+    char argv[5][VALUE_MAX];
     int argc;
-} parsed_command_t;
+} parsed_command ;
 
-int parse_command_line(const char *line, parsed_command_t *out);
+int parse_command_line(const char *line, parsed_command *out);
 
 #endif
