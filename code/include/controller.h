@@ -8,21 +8,13 @@
 
 #define CONTROLLER_MAX_DEVICES 128
 
-typedef struct {
-    device_id id;
-    device_type type;
-    pid_t pid ;
-    state state;
-    device_id parent_id ;
-    char fifo_path[PATH_MAX];
-    bool alive;
-} controller_device_entry ;
+
 
 typedef struct {
     int running ;
     device_id next_device_id;
     int device_count;
-    controller_device_entry devices[CONTROLLER_MAX_DEVICES];
+    device devices[CONTROLLER_MAX_DEVICES];
 } controller ;
 
 int controller_init(controller *controller);
@@ -30,13 +22,18 @@ int controller_run(controller *controller);
 int controller_destroy(controller *controller) ;
 
 int controller_add_device(controller *controller, device_type type);
+
 int controller_delete_device(controller *controller, device_id id);
+
 int controller_list_devices(controller *controller);
+
+
+
 int controller_info_device(controller *controller, device_id id);
 int controller_switch_device(controller *controller, device_id id,const char *label, const char *pos);
 int controller_link_devices(controller *controller, device_id child_id, device_id parent_id);
 
-controller_device_entry *controller_find_device(controller *controller, device_id id);
-const controller_device_entry *controller_find_device_const(const controller *controller, device_id id);
+device *controller_find_device(controller *controller, device_id id);
+const device *controller_find_device_const(const controller *controller, device_id id);
 
 #endif

@@ -15,50 +15,49 @@
 #include "routing.h"
 
 static int ensure_runtime_dirs(void) {
-    if (mkdir(RUNTIME_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
-    if (mkdir(FIFO_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
-    if (mkdir(LOG_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
-    if (mkdir(PID_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
-    if (mkdir(REGISTRY_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
+    if(mkdir(RUNTIME_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
+    if(mkdir(FIFO_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
+    if(mkdir(LOG_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
+    if(mkdir(PID_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
+    if(mkdir(REGISTRY_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
     return OK;
 }
 
-static int write_registry(const controller *controller) {
+static int write_registry(const controller *controller) 
+{
     FILE *fp;
     int i;
 
     fp = fopen(REGISTRY_FILE, "w");
-    if (fp == NULL) {
+    if(fp == NULL) {
         return ERR_SYSTEM;
     }
 
-    for (i = 0; i < controller->device_count; ++i) {
-        const controller_device_entry *dev = &controller->devices[i];
-        if (!dev->alive) {
+    for(i = 0; i < controller->device_count; ++i) {
+        const device *dev = &controller->devices[i];
+        if(dev->info.pid == 0) {
             continue;
         }
-        fprintf(fp, "%d %d %s\n", dev->id, (int)dev->pid, dev->fifo_path);
+        fprintf(fp, "%d %d %s\n", dev->info.id, (int)dev->info.pid, dev->info.fifo_path);
     }
 
     fclose(fp);
     return OK;
 }
 
-static int spawn_bulb_process(device_id id, char *fifo_path, size_t fifo_path_len, pid_t *pid_out) {
+static int spawn_bulb_process(device_id id, pid_t *pid_out) {
     pid_t pid;
     char id_arg[32];
 
     snprintf(id_arg, sizeof(id_arg), "%d", id);
-    if (make_device_fifo_path(id, fifo_path, fifo_path_len) != OK) {
-        return ERR_SYSTEM;
-    }
 
     pid = fork();
     if (pid < 0) {
         return ERR_SYSTEM;
     }
 
-    if (pid == 0) {
+    if(pid == 0) {
+        // child process - exec bulb
         execl("./bin/domotics_controller",
               "./bin/domotics_controller",
               "--device-bulb",
@@ -71,15 +70,15 @@ static int spawn_bulb_process(device_id id, char *fifo_path, size_t fifo_path_le
     return OK;
 }
 
-controller_device_entry *controller_find_device(controller *controller, device_id id) {
+device *controller_find_device(controller *controller, device_id id) {
     int i;
 
-    if (controller == NULL) {
+    if(controller == NULL) {
         return NULL;
     }
 
-    for (i = 0; i < controller->device_count; ++i) {
-        if (controller->devices[i].alive && controller->devices[i].id == id) {
+    for(i = 0; i < controller->device_count; ++i) {
+        if(controller->devices[i].info.pid != 0 && controller->devices[i].info.id == id) {
             return &controller->devices[i];
         }
     }
@@ -87,7 +86,8 @@ controller_device_entry *controller_find_device(controller *controller, device_i
     return NULL;
 }
 
-const controller_device_entry *controller_find_device_const(const controller *controller, device_id id) {
+const device *controller_find_device_const(const controller *controller, device_id id) 
+{
     int i;
 
     if (controller == NULL) {
@@ -95,7 +95,7 @@ const controller_device_entry *controller_find_device_const(const controller *co
     }
 
     for (i = 0; i < controller->device_count; ++i) {
-        if (controller->devices[i].alive && controller->devices[i].id == id) {
+        if (controller->devices[i].info.pid != 0 && controller->devices[i].info.id == id) {
             return &controller->devices[i];
         }
     }
@@ -104,7 +104,7 @@ const controller_device_entry *controller_find_device_const(const controller *co
 }
 
 int controller_init(controller *controller) {
-    if (controller == NULL) {
+    if(controller == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
 
@@ -116,7 +116,7 @@ int controller_init(controller *controller) {
 }
 
 int controller_add_device(controller *controller, device_type type) {
-    controller_device_entry *entry;
+    device *dev;
     pid_t pid;
     int rc;
 
@@ -124,62 +124,72 @@ int controller_add_device(controller *controller, device_type type) {
         return ERR_INVALID_PARAMETERS;
     }
 
-    if (controller->device_count >= CONTROLLER_MAX_DEVICES) {
+    if(controller->device_count >= CONTROLLER_MAX_DEVICES) {
         return ERR_NOT_ALLOWED;
     }
 
     if (type != DEVICE_BULB) {
         return ERR_DEVICE_TYPE_MISMATCH;
+        printf("Device not recognized");
     }
 
-    entry = &controller->devices[controller->device_count];
-    memset(entry, 0, sizeof(*entry));
+    dev = &controller->devices[controller->device_count];
+    memset(dev, 0, sizeof(*dev));
 
-    entry->id = controller->next_device_id++;
-    entry->type = type;
-    entry->state = STATE_OFF;
-    entry->parent_id = CONTROLLER_ID;
-    entry->alive = true;
+    rc = device_common_init(dev, controller->next_device_id++, type);
+    if(rc != OK) {
+        return rc;
+    }
 
-    rc = spawn_bulb_process(entry->id, entry->fifo_path, sizeof(entry->fifo_path), &pid);
+    dev->info.logical_parent_id = CONTROLLER_ID;
+
+    rc = spawn_bulb_process(dev->info.id, &pid);
     if (rc != OK) {
         return rc;
     }
 
-    entry->pid = pid;
+    dev->info.pid = pid;
     controller->device_count++;
 
     rc = write_registry(controller);
-    if (rc != OK) {
+    if(rc != OK) {
         return rc;
     }
 
     printf("Added device: id=%d type=%s pid=%d\n",
-           entry->id, device_type_str(entry->type), (int)entry->pid);
+           dev->info.id, device_type_str(dev->info.type), (int)dev->info.pid);
 
     return OK;
 }
 
-int controller_delete_device(controller *controller, device_id id) {
-    controller_device_entry *dev;
+int controller_delete_device(controller *controller, device_id id) 
+{
+    device *dev;
     int status;
 
-    if (controller == NULL) {
+    if(controller == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
 
     dev = controller_find_device(controller, id);
+    int tempID = dev->info.id;
+    const char *tempDeviceType = device_type_str(dev->info.type);
+    int tempPid = (int)dev->info.pid;
+
     if (dev == NULL) {
         return ERR_DEVICE_NOT_FOUND;
     }
 
-    if (kill(dev->pid, SIGTERM) != 0) {
+    if(kill(dev->info.pid, SIGTERM) != 0) {
         return ERR_SYSTEM;
     }
 
-    waitpid(dev->pid, &status, 0);
-    dev->alive = false;
-    dev->pid = 0;
+    //aspettiamo che il processo finisca di chiudersi in sicurezza
+    waitpid(dev->info.pid, &status, 0);
+    dev->info.pid = 0;
+
+    printf("Deleted device: id=%d type=%s pid=%d\n",
+           tempID, tempDeviceType, (tempPid));
 
     return write_registry(controller);
 }
@@ -187,30 +197,30 @@ int controller_delete_device(controller *controller, device_id id) {
 int controller_list_devices(controller *controller) {
     int i;
 
-    if (controller == NULL) {
+    if(controller == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
 
     printf("ID\tTYPE\tPID\tSTATE\tPARENT\n");
-    for (i = 0; i < controller->device_count; ++i) {
-        controller_device_entry *dev = &controller->devices[i];
-        if (!dev->alive) {
+    for(i = 0; i < controller->device_count; ++i) {
+        device *dev = &controller->devices[i];
+        if(dev->info.pid == 0) {
             continue;
         }
 
         printf("%d\t%s\t%d\t%d\t%d\n",
-               dev->id,
-               device_type_str(dev->type),
-               (int)dev->pid,
-               (int)dev->state,
-               dev->parent_id);
+               dev->info.id,
+               device_type_str(dev->info.type),
+               (int)dev->info.pid,
+               (int)dev->info.state,
+               dev->info.logical_parent_id);
     }
 
     return OK;
 }
 
 int controller_info_device(controller *controller, device_id id) {
-    const controller_device_entry *dev;
+    const device *dev;
     domo_message req;
     domo_message resp;
     char reply_fifo[PATH_MAX];
@@ -221,7 +231,7 @@ int controller_info_device(controller *controller, device_id id) {
     }
 
     dev = controller_find_device_const(controller, id);
-    if (dev == NULL) {
+    if(dev == NULL) {
         return ERR_DEVICE_NOT_FOUND;
     }
 
@@ -233,17 +243,18 @@ int controller_info_device(controller *controller, device_id id) {
     req.src_pid = getpid();
     req.request_id = (int)getpid();
 
-    rc = make_reply_fifo_path(getpid(), req.request_id, reply_fifo, sizeof(reply_fifo));
+    rc = make_reply_fifo_path(getpid(), req.request_id, 
+                              reply_fifo, sizeof(reply_fifo));
+    if(rc != OK) {
+        return rc;
+    }
+
+    rc = request_reply(dev->info.fifo_path, reply_fifo, &req, &resp);
     if (rc != OK) {
         return rc;
     }
 
-    rc = request_reply(dev->fifo_path, reply_fifo, &req, &resp);
-    if (rc != OK) {
-        return rc;
-    }
-
-    if (resp.status != OK) {
+    if(resp.status != OK) {
         return resp.status;
     }
 
@@ -251,14 +262,15 @@ int controller_info_device(controller *controller, device_id id) {
     return OK;
 }
 
-int controller_switch_device(controller *controller, device_id id, const char *label, const char *pos) {
-    const controller_device_entry *dev;
+int controller_switch_device(controller *controller, device_id id, const char *label, const char *pos) 
+{
+    const device *dev;
     domo_message req;
     domo_message resp;
     char reply_fifo[PATH_MAX];
     int rc;
 
-    if (controller == NULL || label == NULL || pos == NULL) {
+    if(controller == NULL || label == NULL || pos == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
 
@@ -278,12 +290,12 @@ int controller_switch_device(controller *controller, device_id id, const char *l
     snprintf(req.arg2, sizeof(req.arg2), "%s", pos);
 
     rc = make_reply_fifo_path(getpid(), req.request_id, reply_fifo, sizeof(reply_fifo));
-    if (rc != OK) {
+    if(rc != OK) {
         return rc;
     }
 
-    rc = request_reply(dev->fifo_path, reply_fifo, &req, &resp);
-    if (rc != OK) {
+    rc = request_reply(dev->info.fifo_path, reply_fifo, &req, &resp);
+    if(rc != OK) {
         return rc;
     }
 
@@ -296,25 +308,28 @@ int controller_switch_device(controller *controller, device_id id, const char *l
 }
 
 int controller_link_devices(controller *controller, device_id child_id, device_id parent_id) {
+    // TODO: implement device linking
     (void)controller;
     (void)child_id;
     (void)parent_id;
     return ERR_NOT_ALLOWED;
 }
 
-int controller_destroy(controller *controller) {
+int controller_destroy(controller *controller) 
+{
     int i;
 
-    if (controller == NULL) {
+    if(controller == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
 
-    for (i = 0; i < controller->device_count; ++i) {
-        controller_device_entry *dev = &controller->devices[i];
-        if (dev->alive) {
-            kill(dev->pid, SIGTERM);
-            waitpid(dev->pid, NULL, 0);
-            dev->alive = false;
+    // cleanup all devices
+    for(i = 0; i < controller->device_count; ++i) {
+        device *dev = &controller->devices[i];
+        if (dev->info.pid != 0) {
+            kill(dev->info.pid, SIGTERM);
+            waitpid(dev->info.pid, NULL, 0);
+            dev->info.pid = 0;
         }
     }
 

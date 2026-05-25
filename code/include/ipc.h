@@ -11,7 +11,7 @@ typedef struct {
     char sender_id[16];         //String: can be a numeric ID (e.g., "0") or "EXT"
     char command[32];           //e.g., "SWITCH, "LINK, "INFO"
     int target_id;              //logical target device ID
-    char payload[MAX_MSG_LEN];  // command-specific data (e.g., "power on")
+    char payload[MAX_MSG_LEN];  // command-specific data (example: "power on")
 
     // Additional fields for request-reply pattern
     int kind;                   // MSG_REQUEST or MSG_RESPONSE
