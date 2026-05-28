@@ -36,6 +36,10 @@ int parse_command_line(const char *line, parsed_command *out) {
 
     if (strcmp(tok, "list") == 0) {
         out->type = PARSER_CMD_LIST;
+        if (strtok_r(NULL, " \t", &saveptr) != NULL) {
+            out->type = PARSER_CMD_INVALID;
+            return ERR_INVALID_PARAMETERS;
+        }
         return OK;
     }
 
@@ -55,6 +59,10 @@ int parse_command_line(const char *line, parsed_command *out) {
         out->type = PARSER_CMD_ADD;
         snprintf(out->argv[0], sizeof(out->argv[0]), "%s", tok);
         out->argc = 1;
+        if (strtok_r(NULL, " \t", &saveptr) != NULL) {
+            out->type = PARSER_CMD_INVALID;
+            return ERR_INVALID_PARAMETERS;
+        }
         return OK;
     }
 
@@ -64,6 +72,10 @@ int parse_command_line(const char *line, parsed_command *out) {
         out->type = PARSER_CMD_DEL;
         snprintf(out->argv[0], sizeof(out->argv[0]), "%s", tok);
         out->argc = 1;
+        if (strtok_r(NULL, " \t", &saveptr) != NULL) {
+            out->type = PARSER_CMD_INVALID;
+            return ERR_INVALID_PARAMETERS;
+        }
         return OK;
     }
 
@@ -73,6 +85,10 @@ int parse_command_line(const char *line, parsed_command *out) {
         out->type = PARSER_CMD_INFO;
         snprintf(out->argv[0], sizeof(out->argv[0]), "%s", tok);
         out->argc = 1;
+        if (strtok_r(NULL, " \t", &saveptr) != NULL) {
+            out->type = PARSER_CMD_INVALID;
+            return ERR_INVALID_PARAMETERS;
+        }
         return OK;
     }
 
@@ -89,6 +105,10 @@ int parse_command_line(const char *line, parsed_command *out) {
         }
 
         out->argc = argc;
+        if (strtok_r(NULL, " \t", &saveptr) != NULL) {
+            out->type = PARSER_CMD_INVALID;
+            return ERR_INVALID_PARAMETERS;
+        }
         return OK;
     }
 
@@ -113,6 +133,10 @@ int parse_command_line(const char *line, parsed_command *out) {
         snprintf(out->argv[0], sizeof(out->argv[0]), "%s", id1);
         snprintf(out->argv[1], sizeof(out->argv[1]), "%s", id2);
         out->argc = 2;
+        if (strtok_r(NULL, " \t", &saveptr) != NULL) {
+            out->type = PARSER_CMD_INVALID;
+            return ERR_INVALID_PARAMETERS;
+        }
         return OK;
     }
 

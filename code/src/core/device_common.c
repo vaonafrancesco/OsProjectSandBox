@@ -95,8 +95,24 @@ int device_common_open_fifo(device *dev, int *fd_out, int *dummy_fd_out) {
         return ERR_INVALID_PARAMETERS;
     }
 
-    fd = open(dev->info.fifo_path, O_RDONLY);
+    fd = open(dev->info.fifo_path, O_RDONLY | O_NONBLOCK);
     if(fd < 0) {
+        perror("open O_RDONLY | O_NONBLOCK failed");
+        unlink(dev->info.fifo_path);
+        return ERR_SYSTEM;
+    }
+
+    int flags = fcntl(fd, F_GETFL);
+    if (flags < 0) {
+        perror("fcntl F_GETFL failed");
+        close(fd);
+        unlink(dev->info.fifo_path);
+        return ERR_SYSTEM;
+    }
+
+    if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0) {
+        perror("fcntl F_SETFL failed");
+        close(fd);
         unlink(dev->info.fifo_path);
         return ERR_SYSTEM;
     }
@@ -120,7 +136,6 @@ int device_common_main_loop(device *dev, int fd) {
         return ERR_INVALID_PARAMETERS;
     }
 
-    // main event loop
     while(device_keep_running) {
         rc = ipc_recv_message(fd, &req);
         if(rc != OK) {

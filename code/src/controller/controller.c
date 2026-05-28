@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,16 +58,60 @@ static int spawn_bulb_process(device_id id, pid_t *pid_out) {
     }
 
     if(pid == 0) {
-        // child process - exec bulb
+        // child process - exec bulb --modifica
         execl("./bin/domotics_controller",
-              "./bin/domotics_controller",
+              "controller",
               "--device-bulb",
               id_arg,
               (char *)NULL);
+        perror("execl failed");
         _exit(ERR_SYSTEM);
     }
 
     *pid_out = pid;
+    return OK;
+}
+
+
+static int spawn_window_process(device_id id, pid_t *pid_out) {
+    pid_t pid ;
+    char id_arg[32] ;
+
+    snprintf(id_arg, sizeof(id_arg),"%d" ,id) ;
+
+    pid = fork();
+    if (pid<0)
+    {
+        return ERR_SYSTEM;}
+
+    if(pid == 0){ //--modifica
+        execl("./bin/domotics_controller","controller","--device-window",id_arg,(char *)NULL);
+        _exit(ERR_SYSTEM);
+    }
+
+    *pid_out=pid;
+    return OK ;
+}
+
+static int spawn_fridge_process(device_id id, pid_t *pid_out) {
+    pid_t pid;
+    char id_arg[32];
+
+    snprintf(id_arg,sizeof(id_arg), "%d", id);
+
+    pid = fork();
+    if (pid < 0) {
+        return ERR_SYSTEM;
+    }
+
+    if(pid == 0){
+        // child process - exec fridge  --modifica
+        execl("./bin/domotics_controller","controller","--device-fridge",id_arg,(char *)NULL);
+        _exit(ERR_SYSTEM);
+    }
+    *pid_out= pid;
+
+
     return OK;
 }
 
@@ -128,22 +173,37 @@ int controller_add_device(controller *controller, device_type type) {
         return ERR_NOT_ALLOWED;
     }
 
-    if (type != DEVICE_BULB) {
-        return ERR_DEVICE_TYPE_MISMATCH;
-        printf("Device not recognized");
-    }
-
-    dev = &controller->devices[controller->device_count];
+    dev=&controller->devices[controller->device_count];
     memset(dev, 0, sizeof(*dev));
 
-    rc = device_common_init(dev, controller->next_device_id++, type);
-    if(rc != OK) {
+    rc= device_common_init(dev,controller->next_device_id++,type);
+    if(rc!=OK)
+    {
+        return rc;
+    }
+
+    //let's set the FIFO when we create the device --modifica
+    rc = device_common_setup_fifo(dev);
+    if (rc != OK) {
         return rc;
     }
 
     dev->info.logical_parent_id = CONTROLLER_ID;
 
-    rc = spawn_bulb_process(dev->info.id, &pid);
+    switch (type) {
+        case DEVICE_BULB:
+            rc=spawn_bulb_process(dev->info.id, &pid);
+            break;
+        case DEVICE_WINDOW:
+            rc= spawn_window_process(dev->info.id , &pid) ;
+            break;
+        case DEVICE_FRIDGE:
+            rc= spawn_fridge_process(dev->info.id , &pid);
+            break;
+        default:
+            return ERR_DEVICE_TYPE_MISMATCH;
+    }
+
     if (rc != OK) {
         return rc;
     }
@@ -151,13 +211,28 @@ int controller_add_device(controller *controller, device_type type) {
     dev->info.pid = pid;
     controller->device_count++;
 
+    // Wait for the device process to open its FIFO reader before returning.
+    int retries = TIMEOUT_DEVICE;
+    while (retries-- > 0) {
+        int ready_fd = open(dev->info.fifo_path, O_WRONLY | O_NONBLOCK);
+        if (ready_fd >= 0) {
+            close(ready_fd);
+            break;
+        }
+        if (errno != ENXIO) {
+            return ERR_SYSTEM;
+        }
+        sleep(1);
+    }
+
+    if (retries < 0) {
+        return ERR_TIMEOUT;
+    }
+
     rc = write_registry(controller);
     if(rc != OK) {
         return rc;
     }
-
-    printf("Added device: id=%d type=%s pid=%d\n",
-           dev->info.id, device_type_str(dev->info.type), (int)dev->info.pid);
 
     return OK;
 }
@@ -172,14 +247,12 @@ int controller_delete_device(controller *controller, device_id id)
     }
 
     dev = controller_find_device(controller, id);
-    int tempID = dev->info.id;
-    const char *tempDeviceType = device_type_str(dev->info.type);
-    int tempPid = (int)dev->info.pid;
+    
 
     if (dev == NULL) {
         return ERR_DEVICE_NOT_FOUND;
     }
-
+    
     if(kill(dev->info.pid, SIGTERM) != 0) {
         return ERR_SYSTEM;
     }
@@ -187,9 +260,6 @@ int controller_delete_device(controller *controller, device_id id)
     //aspettiamo che il processo finisca di chiudersi in sicurezza
     waitpid(dev->info.pid, &status, 0);
     dev->info.pid = 0;
-
-    printf("Deleted device: id=%d type=%s pid=%d\n",
-           tempID, tempDeviceType, (tempPid));
 
     return write_registry(controller);
 }
@@ -240,8 +310,11 @@ int controller_info_device(controller *controller, device_id id) {
     snprintf(req.command, sizeof(req.command), "%s", CMD_INFO);    
     req.src_id = CONTROLLER_ID;
     req.dst_id = id;
+    req.target_id = id; // FIX: Imposta anche target_id per coerenza
     req.src_pid = getpid();
     req.request_id = (int)getpid();
+    snprintf(req.sender_id, sizeof(req.sender_id), "%d", CONTROLLER_ID); //--modifica (aggiunto)
+    snprintf(req.payload, sizeof(req.payload), "ALL"); //--modifica (aggiunto)
 
     rc = make_reply_fifo_path(getpid(), req.request_id, 
                               reply_fifo, sizeof(reply_fifo));
@@ -278,16 +351,18 @@ int controller_switch_device(controller *controller, device_id id, const char *l
     if (dev == NULL) {
         return ERR_DEVICE_NOT_FOUND;
     }
-
     memset(&req, 0, sizeof(req));
     req.kind = MSG_REQUEST;
     snprintf(req.command, sizeof(req.command), "%s", CMD_SWITCH);
     req.src_id = CONTROLLER_ID;
     req.dst_id = id;
+    req.target_id = id; // FIX: Imposta anche target_id per coerenza
     req.src_pid = getpid();
     req.request_id = (int)getpid();
     snprintf(req.arg1, sizeof(req.arg1), "%s", label);
     snprintf(req.arg2, sizeof(req.arg2), "%s", pos);
+    snprintf(req.sender_id, sizeof(req.sender_id), "%d", CONTROLLER_ID); //--modifica (aggiunto)
+    snprintf(req.payload, sizeof(req.payload), "%s,%s", label, pos); //--modifica (aggiunto)
 
     rc = make_reply_fifo_path(getpid(), req.request_id, reply_fifo, sizeof(reply_fifo));
     if(rc != OK) {

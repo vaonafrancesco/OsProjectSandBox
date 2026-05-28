@@ -44,8 +44,7 @@ int ipc_send_request_and_wait(const domo_message *request, domo_message *respons
 		perror("Error in select() during request-reply");
 		return ERR_IPC_FAILURE;
 	} else if(retval == 0){
-		//timeout exired, no response received
-		printf("[IPC] Error: Timeout exired waiting for device %d to reply. \n", request->target_id);
+		// timeout expired, no response received
 		return ERR_IPC_FAILURE;
 	}
 	

@@ -149,8 +149,18 @@ int send_message_to_fifo(const char *fifo_path, const domo_message *msg) {
     }
 
     char buffer[MAX_MSG_LEN];
-    int len = snprintf(buffer, sizeof(buffer), "%s|%s|%d|%s\n",
-                       msg->sender_id, msg->command, msg->target_id, msg->payload);
+    int len = snprintf(buffer, sizeof(buffer), "%s|%s|%d|%d|%d|%d|%d|%s|%s|%d|%s\n",
+                       msg->sender_id,
+                       msg->command,
+                       msg->target_id,
+                       msg->src_id,
+                       msg->dst_id,
+                       (int)msg->src_pid,
+                       msg->request_id,
+                       msg->arg1,
+                       msg->arg2,
+                       msg->status,
+                       msg->payload);
 
     if (len >= (int)sizeof(buffer)) {
         close(fd_out);

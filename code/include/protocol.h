@@ -8,7 +8,8 @@
 #define REGISTRY_PATH       "/tmp/domotica_registry"
 #define FIFO_PATH_PREFIX    "/tmp/domotica_fifo_"
 
-//MESSAGE PROTOCOL AND LIMITS: format: SENDER_ID|COMMAND|TARGET_ID|PAYLOAD
+//MESSAGE PROTOCOL AND LIMITS: format:
+// SENDER_ID|COMMAND|TARGET_ID|SRC_ID|DST_ID|SRC_PID|REQUEST_ID|ARG1|ARG2|STATUS|PAYLOAD
 
 #define MAX_MSG_LEN         1024    //maximum buffer size for a message
 #define MSG_DELIMITER       "|"     // delimiter used for strtok

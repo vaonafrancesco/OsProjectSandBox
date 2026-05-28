@@ -32,7 +32,6 @@ int ipc_recv_message(int fd_in, domo_message *msg);
 int ipc_send_message (const domo_message *msg);
 
 // Common IPC utilities (from ipc_common.c)
-void ipc_print_message(const domo_message *msg);
 void ipc_create_message(domo_message *msg, const char *sender, const char *cmd, int target, const char *payload);
 
 // REquest reply pattern (from request_reply.c)

@@ -4,20 +4,8 @@
 #include "../../include/protocol.h"
 #include "../../include/ipc.h"
 
-//ipc_print_message
-//Utility function to print a domo_message to the stdout. useful for debugging
-
-void ipc_print_message(const domo_message *msg){
-    if (msg==NULL){
-        printf("[IPC DEBUG] Can't print: message is NULL.\n");
-        return;
-    }
-
-    printf("[IPC DEBUG] Sender: %s | Cmd: %s | Target: %d | Payload: %s\n", msg->sender_id, msg->command, msg->target_id, (msg->payload[0] != '\0') ? msg->payload : "NULL");
-}
-
 //ipc_create_message
-//Helper function to quickly populate a domo_message struct safely. Saves otehr modules from having to write multiple strncpy lines manually.
+//Helper function to quickly populate a domo_message struct safely. Saves other modules from having to write multiple strncpy lines manually.
 
 void ipc_create_message(domo_message *msg, const char *sender, const char *cmd, int target, const char *payload){
     if (msg == NULL) return;
