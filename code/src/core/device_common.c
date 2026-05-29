@@ -41,34 +41,37 @@ bool device_is_interaction( device_type type){
 /**
  * 
  */
-static void device_on_sigterm(int sig) {
+static void device_on_sigterm(int sig){
     (void)sig;
     device_keep_running = 0;
 }
-
 static bool device_is_del_command(const domo_message *req) {
-    return req != NULL && strcmp(req->command, CMD_DEL) == 0;
+    return req!=NULL && strcmp(req->command,CMD_DEL)==0 ;
 }
 
-static void device_handle_child_removed(device *dev, const domo_message *req) {
+static void device_handle_child_removed(device *dev,const domo_message *req) 
+{
     device_id removed_id;
+    
+    if(dev==NULL || req==NULL || dev->child_ids==NULL || dev->child_count==0) {
+        return ;
+    }
+    
 
-    if (dev == NULL || req == NULL || dev->child_ids == NULL || dev->child_count == 0) {
+    if( strncmp(req->payload,"child_removed,",14)!=0 ){
         return;
     }
-    if (strncmp(req->payload, "child_removed,", 14) != 0) {
-        return;
-    }
-    removed_id = (device_id)atoi(req->payload + 14);
-    for (size_t i = 0; i < dev->child_count; ++i) {
-        if (dev->child_ids[i] == removed_id) {
-            dev->child_ids[i] = dev->child_ids[dev->child_count - 1];
-            dev->child_count--;
-            return;
+
+    removed_id=(device_id)atoi(req->payload+14) ;
+    
+    for(size_t i=0;i<dev->child_count;++i) {
+        if( dev->child_ids[ i ]==removed_id ){
+            dev->child_ids[ i ]=dev->child_ids[ dev->child_count-1 ] ;
+            dev->child_count-- ;
+            return ;
         }
     }
 }
-
 /**
  * Initializing a common device, for now it is just a device, in the future it will become the right device(bulb, window...)
  */
@@ -100,12 +103,14 @@ int device_common_setup_fifo(device *dev)
         return ERR_INVALID_PARAMETERS;
     }
 
+	//this two lines are necessary to be sure that precedent run does not influence this one
     unlink(dev->info.fifo_path);
     if(mkfifo(dev->info.fifo_path, 0666) != 0 && errno != EEXIST) {
         return ERR_SYSTEM;
     }
 
     {
+	//to handle the right successione of operations we split all the operations to close the process
         struct sigaction sa;
         memset(&sa, 0, sizeof(sa));
         sa.sa_handler = device_on_sigterm;
@@ -113,7 +118,9 @@ int device_common_setup_fifo(device *dev)
         sa.sa_flags = 0;
         sigaction(SIGTERM, &sa, NULL);
     }
-    srand((unsigned int)(getpid() ^ dev->info.id));  // seed rng
+
+	//we change the seed in order to have different pids
+    srand((unsigned int)(getpid() ^ dev->info.id));
 
     return OK;
 }
@@ -121,37 +128,34 @@ int device_common_setup_fifo(device *dev)
 int device_common_open_fifo(device *dev, int *fd_out, int *dummy_fd_out) {
     int fd, dummy_fd;
 
-    if (dev == NULL || fd_out == NULL) {
+    if (dev == NULL||fd_out == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
-
     fd = open(dev->info.fifo_path, O_RDONLY | O_NONBLOCK);
     if(fd < 0) {
         perror("open O_RDONLY | O_NONBLOCK failed");
         unlink(dev->info.fifo_path);
-        return ERR_SYSTEM;
-    }
+        return ERR_SYSTEM;}
 
     int flags = fcntl(fd, F_GETFL);
-    if (flags < 0) {
+    if (flags <0) {
         perror("fcntl F_GETFL failed");
         close(fd);
         unlink(dev->info.fifo_path);
         return ERR_SYSTEM;
     }
-
-    if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0) {
+    if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) <0) {
         perror("fcntl F_SETFL failed");
-        close(fd);
-        unlink(dev->info.fifo_path);
+        close(fd) ;
+        unlink(dev->info.fifo_path) ;
         return ERR_SYSTEM;
     }
 
     dummy_fd = open(dev->info.fifo_path, O_WRONLY | O_NONBLOCK);
 
-    *fd_out = fd;
-    if(dummy_fd_out != NULL) {
-        *dummy_fd_out = dummy_fd;
+    *fd_out =fd;
+    if(dummy_fd_out !=NULL) {
+        *dummy_fd_out =dummy_fd;
     }
 
     return OK;
@@ -166,26 +170,29 @@ int device_common_main_loop(device *dev, int fd) {
         return ERR_INVALID_PARAMETERS;
     }
 
-    while (device_keep_running) {
+
+
+    // main event loop
+    while(device_keep_running) {
         rc = ipc_recv_message(fd, &req);
-        if (rc != OK) {
+        if(rc != OK) {
             if (!device_keep_running) {
                 break;
             }
             continue;
         }
 
-        if (device_is_del_command(&req)) {
+if (device_is_del_command(&req)) {
             device_keep_running = 0;
             break;
         }
 
-        if (strcmp(req.command, CMD_STATUS) == 0) {
+if (strcmp(req.command, CMD_STATUS) == 0) {
             device_handle_child_removed(dev, &req);
             continue;
         }
 
-        if (dev->handle_message != NULL) {
+        if(dev->handle_message != NULL) {
             rc = dev->handle_message(dev, &req, &resp);
             if (rc != OK) {
                 continue;

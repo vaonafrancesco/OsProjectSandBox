@@ -57,8 +57,6 @@ int controller_run(controller *controller) {
 
             case PARSER_CMD_ADD: {
                 device_type type = parse_device_type(cmd.argv[0]);
-                //stampa device_type_str(type)
-                printf("Device type: %s\n", device_type_str(type));
                 if (type == DEVICE_UNKNOWN) {
                     rc = ERR_INVALID_PARAMETERS;
                 } else {

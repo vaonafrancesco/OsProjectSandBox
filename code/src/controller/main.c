@@ -8,6 +8,8 @@
 int bulb_device_main(device_id id);
 int window_device_main(device_id id);
 int fridge_device_main(device_id id);
+int hub_device_main(device_id id);
+int timer_device_main(device_id id);
 
 int main(int argc, char **argv) {
     controller controller;
@@ -24,6 +26,13 @@ int main(int argc, char **argv) {
     if (argc == 3 &&strcmp(argv[1],"--device-fridge") ==0) {
         device_id id= (device_id)atoi(argv[2]);
         return fridge_device_main(id) ;
+    }
+    if (argc == 3 && strcmp(argv[1], "--device-hub") == 0) {
+        device_id id= (device_id)atoi(argv[2]);
+        return hub_device_main(id);
+    }if (argc == 3 && strcmp(argv[1], "--device-timer") == 0) {
+        device_id id= (device_id)atoi(argv[2]);
+        return timer_device_main(id);
     }
 
     rc = controller_init(&controller);

@@ -4,8 +4,9 @@
 #include "../../include/protocol.h"
 #include "../../include/ipc.h"
 
+
 //ipc_create_message
-//Helper function to quickly populate a domo_message struct safely. Saves other modules from having to write multiple strncpy lines manually.
+//Helper function to quickly populate a domo_message struct safely. Saves otehr modules from having to write multiple strncpy lines manually.
 
 void ipc_create_message(domo_message *msg, const char *sender, const char *cmd, int target, const char *payload){
     if (msg == NULL) return;

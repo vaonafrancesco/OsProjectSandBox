@@ -63,43 +63,48 @@ int routing_remove_node(int id){
 	return found ? OK : ERR_DEVICE_NOT_FOUND;
 }
 
-int routing_get_parent_id(int id, int *parent_id_out) {
+int routing_get_parent_id(int id,int *parent_id_out) {
     int i;
-
-    if (parent_id_out == NULL) {
-        return ERR_INVALID_PARAMETERS;
+    
+    if(parent_id_out==NULL) {
+        return ERR_INVALID_PARAMETERS ;
     }
-
-    for (i = 0; i < MAX_DEVICES; i++) {
-        if (routing_table[i].id == id) {
-            *parent_id_out = routing_table[i].parent_id;
+    
+    // loop through the routing table
+    for(i=0;i<MAX_DEVICES;i++) {
+        if( routing_table[ i ].id==id ){
+            *parent_id_out=routing_table[i].parent_id ;
             return OK;
         }
     }
-
+    
     return ERR_DEVICE_NOT_FOUND;
 }
 
-int routing_collect_children(int parent_id, device_id *children_out, int max_children, int *count_out) {
-    int n = 0;
-
-    if (children_out == NULL || count_out == NULL || max_children <= 0) {
-        return ERR_INVALID_PARAMETERS;
+int routing_collect_children(int parent_id,device_id *children_out,int max_children,int *count_out) 
+{
+    int n=0;
+    
+    if(children_out==NULL || count_out==NULL || max_children<=0) {
+        return ERR_INVALID_PARAMETERS ;
     }
-
-    *count_out = 0;
-    for (int i = 0; i < MAX_DEVICES; i++) {
-        if (routing_table[i].id >= 0 && routing_table[i].parent_id == parent_id) {
-            if (n >= max_children) {
+    
+    *count_out=0;
+    
+    // find all kids with this parent
+    for(int i=0;i<MAX_DEVICES;i++) {
+        if( routing_table[ i ].id>=0 && routing_table[ i ].parent_id==parent_id ){
+            if( n>=max_children ){
                 return ERR_INVALID_PARAMETERS;
             }
-            children_out[n++] = (device_id)routing_table[i].id;
+            children_out[ n++]=(device_id)routing_table[ i ].id ;
         }
     }
-
-    *count_out = n;
+    
+    *count_out=n ;
     return OK;
 }
+
 
 // Helper function to create reply FIFO path
 int make_reply_fifo_path(pid_t pid, int request_id, char *path, size_t path_len) {
@@ -196,8 +201,7 @@ int send_message_to_fifo(const char *fifo_path, const domo_message *msg) {
                        msg->request_id,
                        msg->arg1,
                        msg->arg2,
-                       msg->status,
-                       msg->payload);
+                       msg->status, msg->payload);
 
     if (len >= (int)sizeof(buffer)) {
         close(fd_out);

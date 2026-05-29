@@ -15,7 +15,7 @@ int serialize_message(const domo_message *msg, char *buffer, size_t max_len){
     if (msg == NULL || buffer == NULL) return ERR_IPC_FAILURE;
 
     // Format the message into the required protocol string
-    int len = snprintf(buffer, max_len,
+	int len = snprintf(buffer, max_len,
                        "%s|%s|%d|%d|%d|%d|%d|%s|%s|%d|%s\n",
                        msg->sender_id,
                        msg->command,
@@ -28,13 +28,13 @@ int serialize_message(const domo_message *msg, char *buffer, size_t max_len){
                        msg->arg2,
                        msg->status,
                        msg->payload);
-    
-    // check if string is interrupted in the middle
-    if (len < 0 || (size_t)len >= max_len){
-        return ERR_IPC_FAILURE;
-    }
-    
-    return OK;
+	
+	// check if string is interrupted in the middle
+	if(len<0 || (size_t)len >=max_len){
+		return ERR_IPC_FAILURE;
+	}
+	
+	return OK;
 }
 // deserialize_message
 //Parses a raw string buffer into a domo_message struct safely.

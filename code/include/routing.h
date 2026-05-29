@@ -27,6 +27,7 @@
  int routing_get_parent_id(int id, int *parent_id_out);
  int routing_collect_children(int parent_id,device_id *children_out,int max_children, int *count_out);
 
+
  // hierarchy & linking logic (from hierarchy.c)
 
  bool is_control_device(device_type type);
