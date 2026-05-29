@@ -13,7 +13,7 @@ static device_type parse_device_type(const char *s) {
     if (strcmp(s, "timer") == 0) return DEVICE_TIMER;
     if (strcmp(s, "window") == 0) return DEVICE_WINDOW;
     if (strcmp(s, "fridge") == 0) return DEVICE_FRIDGE;
-    return -1;
+    else return DEVICE_UNKNOWN;
 }
 
 static device_id parse_id(const char *s) {
@@ -57,7 +57,9 @@ int controller_run(controller *controller) {
 
             case PARSER_CMD_ADD: {
                 device_type type = parse_device_type(cmd.argv[0]);
-                if (type < 0) {
+                //stampa device_type_str(type)
+                printf("Device type: %s\n", device_type_str(type));
+                if (type == DEVICE_UNKNOWN) {
                     rc = ERR_INVALID_PARAMETERS;
                 } else {
                     rc = controller_add_device(controller, type);
