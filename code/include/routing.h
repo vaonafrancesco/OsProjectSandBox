@@ -24,6 +24,8 @@
  void routing_init(void);
  int routing_add_node(int id, device_type type);
  int routing_remove_node(int id);
+ int routing_get_parent_id(int id, int *parent_id_out);
+ int routing_collect_children(int parent_id,device_id *children_out,int max_children, int *count_out);
 
  // hierarchy & linking logic (from hierarchy.c)
 

@@ -63,6 +63,43 @@ int routing_remove_node(int id){
 	return found ? OK : ERR_DEVICE_NOT_FOUND;
 }
 
+int routing_get_parent_id(int id, int *parent_id_out) {
+    int i;
+
+    if (parent_id_out == NULL) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    for (i = 0; i < MAX_DEVICES; i++) {
+        if (routing_table[i].id == id) {
+            *parent_id_out = routing_table[i].parent_id;
+            return OK;
+        }
+    }
+
+    return ERR_DEVICE_NOT_FOUND;
+}
+
+int routing_collect_children(int parent_id, device_id *children_out, int max_children, int *count_out) {
+    int n = 0;
+
+    if (children_out == NULL || count_out == NULL || max_children <= 0) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    *count_out = 0;
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (routing_table[i].id >= 0 && routing_table[i].parent_id == parent_id) {
+            if (n >= max_children) {
+                return ERR_INVALID_PARAMETERS;
+            }
+            children_out[n++] = (device_id)routing_table[i].id;
+        }
+    }
+
+    *count_out = n;
+    return OK;
+}
 
 // Helper function to create reply FIFO path
 int make_reply_fifo_path(pid_t pid, int request_id, char *path, size_t path_len) {

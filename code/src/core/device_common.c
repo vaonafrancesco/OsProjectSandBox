@@ -41,9 +41,32 @@ bool device_is_interaction( device_type type){
 /**
  * 
  */
-static void device_on_sigterm(int sig){
+static void device_on_sigterm(int sig) {
     (void)sig;
     device_keep_running = 0;
+}
+
+static bool device_is_del_command(const domo_message *req) {
+    return req != NULL && strcmp(req->command, CMD_DEL) == 0;
+}
+
+static void device_handle_child_removed(device *dev, const domo_message *req) {
+    device_id removed_id;
+
+    if (dev == NULL || req == NULL || dev->child_ids == NULL || dev->child_count == 0) {
+        return;
+    }
+    if (strncmp(req->payload, "child_removed,", 14) != 0) {
+        return;
+    }
+    removed_id = (device_id)atoi(req->payload + 14);
+    for (size_t i = 0; i < dev->child_count; ++i) {
+        if (dev->child_ids[i] == removed_id) {
+            dev->child_ids[i] = dev->child_ids[dev->child_count - 1];
+            dev->child_count--;
+            return;
+        }
+    }
 }
 
 /**
@@ -82,7 +105,14 @@ int device_common_setup_fifo(device *dev)
         return ERR_SYSTEM;
     }
 
-    signal(SIGTERM, device_on_sigterm);
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = device_on_sigterm;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sigaction(SIGTERM, &sa, NULL);
+    }
     srand((unsigned int)(getpid() ^ dev->info.id));  // seed rng
 
     return OK;
@@ -136,13 +166,26 @@ int device_common_main_loop(device *dev, int fd) {
         return ERR_INVALID_PARAMETERS;
     }
 
-    while(device_keep_running) {
+    while (device_keep_running) {
         rc = ipc_recv_message(fd, &req);
-        if(rc != OK) {
+        if (rc != OK) {
+            if (!device_keep_running) {
+                break;
+            }
             continue;
         }
 
-        if(dev->handle_message != NULL) {
+        if (device_is_del_command(&req)) {
+            device_keep_running = 0;
+            break;
+        }
+
+        if (strcmp(req.command, CMD_STATUS) == 0) {
+            device_handle_child_removed(dev, &req);
+            continue;
+        }
+
+        if (dev->handle_message != NULL) {
             rc = dev->handle_message(dev, &req, &resp);
             if (rc != OK) {
                 continue;
