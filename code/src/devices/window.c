@@ -58,20 +58,21 @@ static int window_build_info_payload(window_device *window, char *buf, size_t le
 }
 
 static int window_handle_message(device *dev, const domo_message *req, domo_message *resp) {
-    
-    if (dev->info.type != DEVICE_WINDOW) { 
-    return ERR_DEVICE_TYPE_MISMATCH; 
-    }
-    window_device *window = (window_device *)dev;
-
-
-    if (window == NULL || req == NULL || resp == NULL) {
+    if (dev == NULL || req == NULL || resp == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
+
+    if (dev->info.type != DEVICE_WINDOW) {
+        return ERR_DEVICE_TYPE_MISMATCH;
+    }
+
+    window_device *window = (window_device *)dev;
+
 
     memset(resp, 0, sizeof(*resp));
     resp->kind = MSG_RESPONSE;
     snprintf(resp->command, sizeof(resp->command), "%s", req->command);
+    snprintf(resp->sender_id, sizeof(resp->sender_id), "%d", window->base.info.id);
     resp->src_id = window->base.info.id;
     resp->dst_id = req->src_id;
     resp->src_pid = getpid();

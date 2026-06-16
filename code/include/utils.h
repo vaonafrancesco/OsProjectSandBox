@@ -5,5 +5,4 @@
 // Random delay utilities (from random_delay.c)
 void simulate_random_delay(void);
 
-
 #endif

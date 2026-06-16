@@ -32,6 +32,7 @@ int controller_list_devices(controller *controller);
 int controller_info_device(controller *controller, device_id id);
 int controller_switch_device(controller *controller, device_id id,const char *label, const char *pos);
 int controller_link_devices(controller *controller, device_id child_id, device_id parent_id);
+int controller_finalize_dead_device(controller *ctrl, pid_t dead_pid, int status);
 
 device *controller_find_device(controller *controller, device_id id);
 const device *controller_find_device_const(const controller *controller, device_id id);

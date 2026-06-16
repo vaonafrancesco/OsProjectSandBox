@@ -36,12 +36,13 @@ CONTROLLER_SRCS = \
 	$(SRC_DIR)/utils/cleanup.c
 
 MANUAL_SRCS = \
-	$(SRC_DIR)/manual/manual_client.c \
-	$(SRC_DIR)/ipc/ipc_common.c \
-	$(SRC_DIR)/ipc/fifo.c \
-	$(SRC_DIR)/ipc/message.c \
-	$(SRC_DIR)/core/errors.c \
-	$(SRC_DIR)/utils/logging.c
+    $(SRC_DIR)/manual/manual_client.c \
+    $(SRC_DIR)/ipc/ipc_common.c \
+    $(SRC_DIR)/ipc/fifo.c \
+    $(SRC_DIR)/ipc/message.c \
+    $(SRC_DIR)/core/serialization.c \
+    $(SRC_DIR)/core/errors.c \
+    $(SRC_DIR)/utils/logging.c
 
 CONTROLLER_BIN = $(BIN_DIR)/domotics_controller
 MANUAL_BIN = $(BIN_DIR)/manual_client

@@ -41,6 +41,10 @@
  int make_reply_fifo_path(pid_t pid, int request_id, char *path, size_t path_len);
  int request_reply(const char *target_fifo, const char *reply_fifo,
                   const domo_message *request, domo_message *response);
+
+int request_reply_timeout(const char *target_fifo, const char *reply_fifo,
+                          const domo_message *request, domo_message *response,
+                          int timeout_sec);
  int send_message_to_fifo(const char *fifo_path, const domo_message *msg);
 
 

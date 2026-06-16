@@ -9,13 +9,24 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <limits.h>
 
-#define NAME_MAX           64
+#ifndef NAME_MAX
+#define NAME_MAX           255
+#endif
+
 #define LABEL_MAX          32
 #define VALUE_MAX          64
-#define PATH_MAX           256
+
+#ifndef PATH_MAX
+#define PATH_MAX           4096
+#endif
+
 #define PAYLOAD_MAX        512
+
+#ifndef LINE_MAX
 #define LINE_MAX           512
+#endif
 
 #define RUNTIME_DIR        "runtime"
 #define FIFO_DIR           "runtime/fifos"

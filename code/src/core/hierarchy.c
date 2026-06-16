@@ -31,50 +31,43 @@ static int get_node_index(int id){
 //Tries to logically link child_id to parent_id.
 //Enforces tree structure by checking for DEVICE_TYPE_MISMATCH and CYCLE_DETECTED (preventing infinite loops)
 
-int routing_link_devices(int child_id, int parent_id){
-    // you can't link a device to itself
-    if (child_id == parent_id){
+int routing_link_devices(int child_id, int parent_id)
+{
+    int child_idx;
+    int parent_idx;
+    int current_ancestor_id;
+
+    if (child_id == parent_id) {
         return ERR_SELF_LINK;
     }
-    int child_idx = get_node_index(child_id);
-	int parent_idx = get_node_index(parent_id);
-	
-	// Ensure both devices actually exist in the registry
-	if (child_idx == -1 || parent_idx == -1){
-		return ERR_DEVICE_NOT_FOUND;
-	}
-	
-	// Validate Parent type (only Controller, Hub and Timer can be parents)
-	if (!is_control_device(routing_table[parent_idx].type)){
-		return ERR_DEVICE_TYPE_MISMATCH;
-	}
-	
-	// Cycle Detection Algorithm
-	// We traverse upwards from the PROPOSED NEW parent up to the Controller
-	// If we encounter the child_id during this operation, it means that the new parent is a descendant of the child.
-	// linking them would create an infinite loop, making the IPC crash
-	
-	int current_ancestor_id = parent_id;
-	
-	while (current_ancestor_id != CONTROLLER_ID){
-		
-		if(current_ancestor_id == child_id) {
-			return ERR_CYCLE_DETECTED;
-		}
-		
-		int ancestor_idx = get_node_index(current_ancestor_id);
-		if (ancestor_idx == -1){
-			break; //safety fallback: broken chain
-		}
-		
-		// move up one level in the logical tree
-		current_ancestor_id = routing_table[ancestor_idx].parent_id;
-		
-	}
-	
-	// All checks passed. Apply the logical link safely.
-    
-	routing_table[child_idx].parent_id = parent_id;
-	return OK;
 
+    child_idx = get_node_index(child_id);
+    parent_idx = get_node_index(parent_id);
+
+    if (child_idx == -1 || parent_idx == -1) {
+        return ERR_DEVICE_NOT_FOUND;
+    }
+
+    if (!is_control_device(routing_table[parent_idx].type)) {
+        return ERR_DEVICE_TYPE_MISMATCH;
+    }
+
+    current_ancestor_id = parent_id;
+    while (current_ancestor_id != CONTROLLER_ID) {
+        int ancestor_idx;
+
+        if (current_ancestor_id == child_id) {
+            return ERR_CYCLE_DETECTED;
+        }
+
+        ancestor_idx = get_node_index(current_ancestor_id);
+        if (ancestor_idx == -1) {
+            return ERR_INVALID_STATE;
+        }
+
+        current_ancestor_id = routing_table[ancestor_idx].parent_id;
+    }
+
+    routing_table[child_idx].parent_id = parent_id;
+    return OK;
 }

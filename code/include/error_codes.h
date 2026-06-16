@@ -18,7 +18,7 @@ typedef enum {
     ERR_INVALID_STATE = 13,
     ERR_INVALID_TIME = 14,
     ERR_SYSTEM = 100
-} error ;
+} error_code_t;
 
 const char *error_str(int code);
 

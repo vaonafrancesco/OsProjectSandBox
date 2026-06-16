@@ -187,9 +187,23 @@ if (device_is_del_command(&req)) {
             break;
         }
 
-if (strcmp(req.command, CMD_STATUS) == 0) {
+        if (strcmp(req.command, CMD_STATUS) == 0) {
             device_handle_child_removed(dev, &req);
-            continue;
+            if (strncmp(req.payload, "child_removed,", 14) == 0) {
+                continue;
+            }
+        }
+
+        // Backward-compat: older clients encode SWITCH args only in payload (e.g. "power on" / "power,on").
+        if (strcmp(req.command, CMD_SWITCH) == 0 && req.arg1[0] == '\0' && req.payload[0] != '\0') {
+            char label[sizeof(req.arg1)] = {0};
+            char pos[sizeof(req.arg2)] = {0};
+
+            if (sscanf(req.payload, "%31[^ ,],%31s", label, pos) == 2 ||
+                sscanf(req.payload, "%31s %31s", label, pos) == 2) {
+                snprintf(req.arg1, sizeof(req.arg1), "%s", label);
+                snprintf(req.arg2, sizeof(req.arg2), "%s", pos);
+            }
         }
 
         if(dev->handle_message != NULL) {

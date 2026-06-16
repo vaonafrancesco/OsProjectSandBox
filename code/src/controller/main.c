@@ -4,6 +4,7 @@
 
 #include "controller.h"
 #include "error_codes.h"
+#include "cleanup.h"
 
 int bulb_device_main(device_id id);
 int window_device_main(device_id id);
@@ -39,6 +40,13 @@ int main(int argc, char **argv) {
     if (rc != OK) {
         fprintf(stderr, "controller_init failed: %s\n", error_str(rc));
         return rc;
+    }
+
+    rc = cleanup_install_sigchld_handler();
+    if (rc != OK) {
+        fprintf(stderr, "cleanup_install_sigchld_handler failed: %s\n", error_str(ERR_SYSTEM));
+        controller_destroy(&controller);
+        return ERR_SYSTEM;
     }
 
     rc = controller_run(&controller);

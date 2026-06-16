@@ -63,45 +63,44 @@ int routing_remove_node(int id){
 	return found ? OK : ERR_DEVICE_NOT_FOUND;
 }
 
-int routing_get_parent_id(int id,int *parent_id_out) {
+int routing_get_parent_id(int id, int *parent_id_out)
+{
     int i;
-    
-    if(parent_id_out==NULL) {
-        return ERR_INVALID_PARAMETERS ;
+
+    if (parent_id_out == NULL) {
+        return ERR_INVALID_PARAMETERS;
     }
-    
-    // loop through the routing table
-    for(i=0;i<MAX_DEVICES;i++) {
-        if( routing_table[ i ].id==id ){
-            *parent_id_out=routing_table[i].parent_id ;
+
+    for (i = 0; i < MAX_DEVICES; i++) {
+        if (routing_table[i].id == id) {
+            *parent_id_out = routing_table[i].parent_id;
             return OK;
         }
     }
-    
+
     return ERR_DEVICE_NOT_FOUND;
 }
 
-int routing_collect_children(int parent_id,device_id *children_out,int max_children,int *count_out) 
+int routing_collect_children(int parent_id, device_id *children_out, int max_children, int *count_out)
 {
-    int n=0;
-    
-    if(children_out==NULL || count_out==NULL || max_children<=0) {
-        return ERR_INVALID_PARAMETERS ;
+    int n = 0;
+
+    if (children_out == NULL || count_out == NULL || max_children <= 0) {
+        return ERR_INVALID_PARAMETERS;
     }
-    
-    *count_out=0;
-    
-    // find all kids with this parent
-    for(int i=0;i<MAX_DEVICES;i++) {
-        if( routing_table[ i ].id>=0 && routing_table[ i ].parent_id==parent_id ){
-            if( n>=max_children ){
-                return ERR_INVALID_PARAMETERS;
+
+    *count_out = 0;
+
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (routing_table[i].id >= 0 && routing_table[i].parent_id == parent_id) {
+            if (n >= max_children) {
+                return ERR_NOT_ALLOWED;
             }
-            children_out[ n++]=(device_id)routing_table[ i ].id ;
+            children_out[n++] = (device_id)routing_table[i].id;
         }
     }
-    
-    *count_out=n ;
+
+    *count_out = n;
     return OK;
 }
 
@@ -116,102 +115,112 @@ int make_reply_fifo_path(pid_t pid, int request_id, char *path, size_t path_len)
 }
 
 // Helper function for request-reply pattern
-int request_reply(const char *target_fifo, const char *reply_fifo,
-                  const domo_message *request, domo_message *response) {
+int request_reply_timeout(const char *target_fifo, const char *reply_fifo,
+                          const domo_message *request, domo_message *response,
+                          int timeout_sec)
+{
     int fd_reply;
     int rc;
+    fd_set read_fds;
+    struct timeval tv;
+    int retval;
 
     if (target_fifo == NULL || reply_fifo == NULL || request == NULL || response == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
 
-    // Create reply FIFO
+    if (timeout_sec <= 0) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
     unlink(reply_fifo);
     if (mkfifo(reply_fifo, 0666) != 0 && errno != EEXIST) {
         return ERR_SYSTEM;
     }
 
-    // Open reply FIFO for reading (non-blocking first)
     fd_reply = open(reply_fifo, O_RDONLY | O_NONBLOCK);
     if (fd_reply < 0) {
         unlink(reply_fifo);
         return ERR_SYSTEM;
     }
 
-    // Send request to target
-    rc = ipc_send_message(request);
+    rc = send_message_to_fifo(target_fifo, request);
     if (rc != OK) {
         close(fd_reply);
         unlink(reply_fifo);
         return rc;
     }
 
-    // Wait for response with timeout
-    fd_set read_fds;
     FD_ZERO(&read_fds);
     FD_SET(fd_reply, &read_fds);
 
-    struct timeval tv;
-    tv.tv_sec = TIMEOUT_DEVICE;
+    tv.tv_sec = timeout_sec;
     tv.tv_usec = 0;
 
-    int retval = select(fd_reply + 1, &read_fds, NULL, NULL, &tv);
+    retval = select(fd_reply + 1, &read_fds, NULL, NULL, &tv);
     if (retval == -1) {
         close(fd_reply);
         unlink(reply_fifo);
         return ERR_IPC_FAILURE;
-    } else if (retval == 0) {
+    }
+
+    if (retval == 0) {
         close(fd_reply);
         unlink(reply_fifo);
         return ERR_TIMEOUT;
     }
 
-    // Read response
     rc = ipc_recv_message(fd_reply, response);
+
     close(fd_reply);
     unlink(reply_fifo);
-
     return rc;
+}
+
+int request_reply(const char *target_fifo, const char *reply_fifo,
+                  const domo_message *request, domo_message *response)
+{
+    return request_reply_timeout(target_fifo, reply_fifo, request, response, TIMEOUT_DEVICE);
 }
 
 // Helper function to send message to a specific FIFO path
 int send_message_to_fifo(const char *fifo_path, const domo_message *msg) {
     int fd_out;
+    char buffer[MAX_MSG_LEN];
+    int len;
+    ssize_t written;
 
     if (fifo_path == NULL || msg == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
 
-    fd_out = open(fifo_path, O_WRONLY | O_NONBLOCK);
+    fd_out = open(fifo_path, O_WRONLY);
     if (fd_out < 0) {
-        if (errno == ENXIO) {
-            return ERR_DEVICE_NOT_FOUND;
-        }
         return ERR_IPC_FAILURE;
     }
 
-    char buffer[MAX_MSG_LEN];
-    int len = snprintf(buffer, sizeof(buffer), "%s|%s|%d|%d|%d|%d|%d|%s|%s|%d|%s\n",
-                       msg->sender_id,
-                       msg->command,
-                       msg->target_id,
-                       msg->src_id,
-                       msg->dst_id,
-                       (int)msg->src_pid,
-                       msg->request_id,
-                       msg->arg1,
-                       msg->arg2,
-                       msg->status, msg->payload);
+    len = snprintf(buffer, sizeof(buffer), "%s|%s|%d|%d|%d|%d|%d|%s|%s|%d|%s\n",
+                   msg->sender_id,
+                   msg->command,
+                   msg->target_id,
+                   msg->src_id,
+                   msg->dst_id,
+                   (int)msg->src_pid,
+                   msg->request_id,
+                   msg->arg1,
+                   msg->arg2,
+                   msg->status,
+                   msg->payload);
 
-    if (len >= (int)sizeof(buffer)) {
+    if (len < 0 || len >= (int)sizeof(buffer)) {
         close(fd_out);
         return ERR_IPC_FAILURE;
     }
 
-    ssize_t written = write(fd_out, buffer, len);
+    written = write(fd_out, buffer, (size_t)len);
     close(fd_out);
 
-    if (written != len) {
+    if (written < 0 || written != len) {
         return ERR_IPC_FAILURE;
     }
 

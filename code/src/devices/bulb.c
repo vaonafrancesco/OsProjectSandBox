@@ -41,15 +41,54 @@ static void update_usage_time(bulb_device *bulb)
     }
 }
 
-
 static int bulb_build_info_payload(bulb_device *bulb, char *buf, size_t len) {
     if (bulb == NULL || buf == NULL) {
-        return ERR_INVALID_PARAMETERS;}
-    update_usage_time(bulb)  ;
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    update_usage_time(bulb);
 
     snprintf(buf, len,
-             "bulb id=%d state=%s time=%lu",
-             bulb->base.info.id, state_str(bulb->base.info.state), bulb->total_usage_time);
+             "bulb id=%d state=%s manual_override=%s time=%lu",
+             bulb->base.info.id,
+             state_str(bulb->base.info.state),
+             bulb->base.info.manual_override ? "true" : "false",
+             bulb->total_usage_time);
+    return OK;
+}
+
+static int parse_switch_args(const domo_message *req,
+                             char *label, size_t label_len,
+                             char *position, size_t position_len) {
+    char local[MAX_MSG_LEN];
+    char *comma;
+
+    if (req == NULL || label == NULL || position == NULL) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    label[0] = '\0';
+    position[0] = '\0';
+
+    if (req->arg1[0] != '\0' && req->arg2[0] != '\0') {
+        snprintf(label, label_len, "%s", req->arg1);
+        snprintf(position, position_len, "%s", req->arg2);
+        return OK;
+    }
+
+    if (req->payload[0] == '\0') {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    snprintf(local, sizeof(local), "%s", req->payload);
+    comma = strchr(local, ',');
+    if (comma == NULL) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    *comma = '\0';
+    snprintf(label, label_len, "%s", local);
+    snprintf(position, position_len, "%s", comma + 1);
     return OK;
 }
 
@@ -80,32 +119,44 @@ static int bulb_handle_message(device *dev, const domo_message *req, domo_messag
         return bulb_build_info_payload(bulb, resp->payload, sizeof(resp->payload));
     }
     if (strcmp(req->command, CMD_SWITCH) == 0) {
-            if (strcmp(req->arg1, "power") != 0) {
-                resp->status = ERR_INVALID_PARAMETERS;
-                snprintf(resp->payload, sizeof(resp->payload), "invalid switch label");
-                return OK;
-            }
+        bool is_manual_override = (strcmp(req->sender_id, EXT_SENDER_ID) == 0) || (req->src_id == -1);
+        int rc;
+        char label[64];
+        char position[64];
 
-            update_usage_time(bulb);
-
-            if (strcmp(req->arg2, "on") == 0)
-            {
-                bulb->base.info.state = STATE_ON;
-                bulb->last_state_change = time(NULL);
-            }else if (strcmp(req->arg2, "off") == 0) {
-                bulb->base.info.state = STATE_OFF ;
-                bulb->last_state_change = 0 ;
-            }else{
-                resp->status = ERR_INVALID_PARAMETERS;
-                snprintf( resp->payload, sizeof(resp->payload), "invalid switch position");
-                return OK ;
-
-            }
-
-            snprintf(resp->payload, sizeof(resp->payload),
-                     "bulb %d switched %s", bulb->base.info.id, state_str(bulb->base.info.state));
+        rc = parse_switch_args(req, label, sizeof(label), position, sizeof(position));
+        if (rc != OK) {
+            resp->status = ERR_INVALID_PARAMETERS;
+            snprintf(resp->payload, sizeof(resp->payload), "invalid switch payload");
             return OK;
         }
+
+        if (strcmp(label, "power") != 0) {
+            resp->status = ERR_INVALID_PARAMETERS;
+            snprintf(resp->payload, sizeof(resp->payload), "invalid switch label");
+            return OK;
+        }
+
+        update_usage_time(bulb);
+
+        if (strcmp(position, "on") == 0) {
+            bulb->base.info.state = STATE_ON;
+            bulb->base.info.manual_override = is_manual_override;
+            bulb->last_state_change = time(NULL);
+        } else if (strcmp(position, "off") == 0) {
+            bulb->base.info.state = STATE_OFF;
+            bulb->base.info.manual_override = is_manual_override;
+            bulb->last_state_change = 0;
+        } else {
+            resp->status = ERR_INVALID_PARAMETERS;
+            snprintf(resp->payload, sizeof(resp->payload), "invalid switch position");
+            return OK;
+        }
+
+        snprintf(resp->payload, sizeof(resp->payload),
+                "bulb %d switched %s", bulb->base.info.id, state_str(bulb->base.info.state));
+        return OK;
+    }
 
 
             resp->status = ERR_INVALID_COMMAND;
