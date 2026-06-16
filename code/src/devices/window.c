@@ -164,6 +164,19 @@ static int window_destroy(device *dev){
     
 }
 
+static int window_update(device *dev) {
+    window_device *window = (window_device *)dev;
+    
+    if (window == NULL) {
+        return ERR_INVALID_PARAMETERS;
+    }
+    
+    // Update open time counter
+    update_usage_time(window);
+    
+    return OK;
+}
+
 
 int window_device_main(device_id id){
     window_device window;
@@ -180,6 +193,7 @@ int window_device_main(device_id id){
         
         window.base.handle_message= window_handle_message;
         window.base.destroy=window_destroy;
+        window.base.update=window_update;
 
         
         rc= window_init(&window.base) ;

@@ -79,7 +79,6 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
     memset(resp, 0, sizeof(*resp));
     resp->kind = MSG_RESPONSE;
     snprintf(resp->command, sizeof(resp->command), "%s", req->command);
-    snprintf(resp->sender_id, sizeof(resp->sender_id), "%d", fridge->base.info.id);
     resp->src_id = fridge->base.info.id;
     resp->dst_id = req->src_id;
     resp->src_pid = getpid();
@@ -93,7 +92,7 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
     }
 
     if(strcmp(req->command, CMD_SWITCH) == 0){
-        if(strcmp(req->arg1, "open") == 0) {
+        if(strcmp(req->arg1, "power") == 0) {
             update_open_time(fridge);
 
             if(strcmp(req->arg2, "on") == 0){
@@ -173,6 +172,26 @@ static int fridge_destroy(device *dev) {
     return OK;
 }
 
+static int fridge_update(device *dev) {
+    fridge_device *fridge = (fridge_device *)dev;
+    
+    if (fridge == NULL) {
+        return ERR_INVALID_PARAMETERS;
+    }
+    
+    // Update open time counter
+    update_open_time(fridge);
+    
+    // Check for auto-close based on delay
+    if (fridge->base.info.state == STATE_ON && 
+        fridge->total_open_time >= (unsigned long)fridge->delay_seconds) {
+        fridge->base.info.state = STATE_OFF;
+        fridge->last_open_time = 0;
+    }
+    
+    return OK;
+}
+
 int fridge_device_main(device_id id) {
     fridge_device fridge;
     int fd, dummy_fd;
@@ -188,6 +207,7 @@ int fridge_device_main(device_id id) {
     fridge.base.init = fridge_init;
     fridge.base.handle_message = fridge_handle_message;
     fridge.base.destroy = fridge_destroy;
+    fridge.base.update = fridge_update;
 
     rc = fridge_init(&fridge.base);
     if (rc != OK) {
