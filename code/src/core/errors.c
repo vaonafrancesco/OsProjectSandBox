@@ -16,6 +16,7 @@ const char *error_str(int code) {
         case ERR_CHILD_CRASHED: return "Child process crashed, restart the device and try again.";
         case ERR_TIMEOUT: return "The operation has timed out, the request took too long to complete.";
         case ERR_INVALID_STATE: return "The device is not in the correct state for this action.";
+        case ERR_PERMISSION_DENIED: return "Permission denied. This action requires manual interaction."; //--modifica
         case ERR_INVALID_TIME: return "Invalid time value. Use a valid time format and try again.";
         default: return "System error. Check logs or retry the operation.";
     }

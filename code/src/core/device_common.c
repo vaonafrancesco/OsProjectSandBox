@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "routing.h"
@@ -138,19 +138,7 @@ int device_common_open_fifo(device *dev, int *fd_out, int *dummy_fd_out) {
         unlink(dev->info.fifo_path);
         return ERR_SYSTEM;}
 
-    int flags = fcntl(fd, F_GETFL);
-    if (flags <0) {
-        perror("fcntl F_GETFL failed");
-        close(fd);
-        unlink(dev->info.fifo_path);
-        return ERR_SYSTEM;
-    }
-    if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) <0) {
-        perror("fcntl F_SETFL failed");
-        close(fd) ;
-        unlink(dev->info.fifo_path) ;
-        return ERR_SYSTEM;
-    }
+    // Keep O_NONBLOCK for select() based concurrency
 
     dummy_fd = open(dev->info.fifo_path, O_WRONLY | O_NONBLOCK);
 
@@ -166,39 +154,35 @@ int device_common_main_loop(device *dev, int fd) {
     domo_message req;
     domo_message resp;
     int rc;
-    fd_set read_fds;
-    struct timeval timeout;
 
     if (dev == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
 
-    // main event loop with select() and timeout
+    // main event loop with select() for concurrency
     while(device_keep_running) {
-        FD_ZERO(&read_fds);
-        FD_SET(fd, &read_fds);
-        
-        timeout.tv_sec = 1;  // 1 second timeout
-        timeout.tv_usec = 0;
-        
-        int select_result = select(fd + 1, &read_fds, NULL, NULL, &timeout);
-        
-        if (select_result < 0) {
-            if (errno == EINTR) continue;
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(fd, &readfds);
+
+        rc = select(fd + 1, &readfds, NULL, NULL, NULL);
+        if (rc < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return ERR_SYSTEM;
+        }
+
+        if (!device_keep_running) {
             break;
         }
-        
-        if (select_result == 0) {
-            // Timeout expired - call update callback if exists
-            if (dev->update != NULL) {
-                dev->update(dev);
-            }
-            continue;
-        }
-        
-        if (FD_ISSET(fd, &read_fds)) {
+
+        if (FD_ISSET(fd, &readfds)) {
             rc = ipc_recv_message(fd, &req);
             if(rc != OK) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    continue;
+                }
                 if (!device_keep_running) {
                     break;
                 }
@@ -212,7 +196,21 @@ int device_common_main_loop(device *dev, int fd) {
 
             if (strcmp(req.command, CMD_STATUS) == 0) {
                 device_handle_child_removed(dev, &req);
-                continue;
+                if (strncmp(req.payload, "child_removed,", 14) == 0) {
+                    continue;
+                }
+            }
+
+            // Backward-compat: older clients encode SWITCH args only in payload (e.g. "power on" / "power,on").
+            if (strcmp(req.command, CMD_SWITCH) == 0 && req.arg1[0] == '\0' && req.payload[0] != '\0') {
+                char label[sizeof(req.arg1)] = {0};
+                char pos[sizeof(req.arg2)] = {0};
+
+                if (sscanf(req.payload, "%31[^ ,],%31s", label, pos) == 2 ||
+                    sscanf(req.payload, "%31s %31s", label, pos) == 2) {
+                    snprintf(req.arg1, sizeof(req.arg1), "%s", label);
+                    snprintf(req.arg2, sizeof(req.arg2), "%s", pos);
+                }
             }
 
             if(dev->handle_message != NULL) {

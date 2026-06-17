@@ -207,6 +207,48 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
         return OK;
     }
 
+    if(strcmp(req->command,"SET")==0) {
+        // Validate and set begin time
+        if(strcmp(req->arg1,"begin")==0) {
+            if(validate_time_format(req->arg2)!=OK) {
+                resp->status=ERR_INVALID_PARAMETERS;
+                snprintf(resp->payload,sizeof(resp->payload),"invalid time format (HH:MM)");
+                return OK;
+            }
+            // Validate begin < end
+            if(compare_times(req->arg2,timer->end_time)>=0) {
+                resp->status=ERR_INVALID_PARAMETERS;
+                snprintf(resp->payload,sizeof(resp->payload),"begin must be before end");
+                return OK;
+            }
+            snprintf(timer->begin_time,sizeof(timer->begin_time),"%s",req->arg2);
+            snprintf(resp->payload,sizeof(resp->payload),"timer %d begin set to %s",timer->base.info.id,timer->begin_time);
+            return OK;
+        }
+
+        // Validate and set end time
+        if(strcmp(req->arg1,"end")==0) {
+            if(validate_time_format(req->arg2)!=OK) {
+                resp->status=ERR_INVALID_PARAMETERS;
+                snprintf(resp->payload,sizeof(resp->payload),"invalid time format (HH:MM)");
+                return OK;
+            }
+            // Validate begin < end
+            if(compare_times(timer->begin_time,req->arg2)>=0) {
+                resp->status=ERR_INVALID_PARAMETERS;
+                snprintf(resp->payload,sizeof(resp->payload),"end must be after begin");
+                return OK;
+            }
+            snprintf(timer->end_time,sizeof(timer->end_time),"%s",req->arg2);
+            snprintf(resp->payload,sizeof(resp->payload),"timer %d end set to %s",timer->base.info.id,timer->end_time);
+            return OK;
+        }
+
+        resp->status=ERR_INVALID_PARAMETERS;
+        snprintf(resp->payload,sizeof(resp->payload),"invalid set parameter (use begin or end)");
+        return OK;
+    }
+
     resp->status=ERR_INVALID_COMMAND ;
     snprintf(resp->payload,sizeof(resp->payload),"unknown command");
     return OK;

@@ -17,6 +17,7 @@ typedef enum {
     ERR_TIMEOUT = 12,
     ERR_INVALID_STATE = 13,
     ERR_INVALID_TIME = 14,
+    ERR_PERMISSION_DENIED = 15,
     ERR_SYSTEM = 100
 } error_code_t;
 
