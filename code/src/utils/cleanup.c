@@ -89,7 +89,7 @@ int cleanup_reap_terminated_children(controller *ctrl)
 Cosa stampa: Il PID del processo che non è stato finalizzato correttamente
              */
             fprintf(stderr,
-                 "\n[cleanup] Failed to finalize pid=%ld\n",
+                    "\n[cleanup] Failed to finalize pid=%ld\n",
                     (long)dead_pid);
         }
         reaped_count++;

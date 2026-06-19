@@ -34,8 +34,8 @@ typedef struct {
     int running;
     device_id next_device_id;
     int device_count;
-    device devices[CONTROLLER_MAX_DEVICES];
-    pending_request pending[CONTROLLER_MAX_PENDING];
+    device devices[CONTROLLER_MAX_DEVICES] ;
+    pending_request pending[CONTROLLER_MAX_PENDING] ;
 } controller;
 
 int controller_init(controller *controller);

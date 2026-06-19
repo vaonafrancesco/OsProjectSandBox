@@ -502,6 +502,8 @@ static int timer_update(device *dev){
         memset(&auto_req, 0, sizeof(auto_req));
 
         snprintf(auto_req.command, sizeof(auto_req.command), "%s", CMD_SWITCH);
+        //snprintf(auto_req.arg1, sizeof(auto_req.arg1), "main");
+        //snprintf(auto_req.arg2, sizeof(auto_req.arg2), is_on ? "on" : "off");
 
         switch (child_type) {
             case DEVICE_BULB:

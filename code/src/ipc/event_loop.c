@@ -22,7 +22,6 @@ static int handle_stdin_event(controller *ctrl)
     return repl_read_and_execute(ctrl);
 }
 
-
 static void eventloop_print_async_line(const char *fmt, ...)
 {
     // va_list ap;
@@ -31,7 +30,7 @@ static void eventloop_print_async_line(const char *fmt, ...)
         return;
     }
 
-    // Debug log - commented out
+    // Debug log - commentato per ora 
     // fprintf(stderr, "\r");
     // va_start(ap, fmt);
     // vfprintf(stderr, fmt, ap);
