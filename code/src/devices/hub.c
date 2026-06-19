@@ -310,7 +310,7 @@ static int hub_propagate_to_children(device *dev, const domo_message *req)
     hub_device *hub = (hub_device *)dev;
     int rc;
     int i;
-    char label_dump[32]; // Usato solo per estrarre la position originaria
+    char label[32];
     char position[32];
     char payload[96];
     state expected_state;
@@ -324,7 +324,7 @@ static int hub_propagate_to_children(device *dev, const domo_message *req)
         return rc;
     }
 
-    rc = parse_switch_args(req, label_dump, sizeof(label_dump), position, sizeof(position));
+    rc = parse_switch_args(req, label, sizeof(label), position, sizeof(position));
     if (rc != OK) {
         return rc;
     }
@@ -334,7 +334,7 @@ static int hub_propagate_to_children(device *dev, const domo_message *req)
         return rc;
     }
 
-    // Costruisce il payload universale bypassando le label specifiche delle foglie
+    //in pratica costruisce il payload in maniera universale, bypassa le ettichettte specifiche delle varie foglie(in pratica se ne frega se è open oppure power, il controllo si fa dopo)
     snprintf(payload, sizeof(payload), "sys_state,%s", position);
 
     for (i = 0; i < hub->child_count; ++i) {
@@ -348,12 +348,10 @@ static int hub_propagate_to_children(device *dev, const domo_message *req)
                                        payload,
                                        &child_resp);
         if (rc != OK) {
-            continue; // La system call IPC è fallita (es. pipe rotta/figlio morto)
+            continue; // La system call ipc è fallita (può essere boh, pipe rotta o figlio morto che ne so)
         }
 
         if (child_resp.status != OK) {
-            // Nessun errore viene più ignorato. Se una foglia rifiuta il comando universale,
-            // l'albero è inconsistente e la propagazione fallisce.
             return child_resp.status;
         }
     }

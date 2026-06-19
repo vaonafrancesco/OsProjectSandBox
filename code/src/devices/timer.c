@@ -420,7 +420,7 @@ static int timer_update(device *dev){
         memset(&auto_req, 0, sizeof(auto_req));
 
         snprintf(auto_req.command, sizeof(auto_req.command), "%s", CMD_SWITCH);
-        // Usa l'etichetta universale Non importa chi sia il figlio
+        // Usa l'etichetta Universale Non importa chi sia il figlio
         snprintf(auto_req.arg1, sizeof(auto_req.arg1), "sys_state"); 
         snprintf(auto_req.arg2, sizeof(auto_req.arg2), is_on ? "on" : "off");
 

@@ -247,3 +247,4 @@ int window_device_main(device_id id){
     rc =device_common_main_loop(&window.base, fd);
     device_common_cleanup(&window.base, fd, dummy_fd);
     return rc;}
+
