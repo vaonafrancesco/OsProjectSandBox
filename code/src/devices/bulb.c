@@ -168,7 +168,7 @@ static int bulb_handle_message(device *dev, const domo_message *req, domo_messag
             return OK;
         }
 
-        if (strcmp(label, "power") != 0) {
+        if (strcmp(label, "power") != 0 && strcmp(label, "sys_state") != 0) {
             resp->status = ERR_INVALID_PARAMETERS;
             snprintf(resp->payload, sizeof(resp->payload), "invalid switch label");
             return OK;

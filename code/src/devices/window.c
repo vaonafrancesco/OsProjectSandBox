@@ -55,7 +55,6 @@ static int window_build_info_payload(window_device *window, char *buf, size_t le
         return ERR_INVALID_PARAMETERS;}
 
     update_usage_time(window)  ;
-    //update_usage_time((window_device *)window)  ;
 
     snprintf(buf, len,
              "window id=%d state=%s time=%lu open_switch=%d close_switch=%d",
@@ -93,21 +92,37 @@ static int window_handle_message(device *dev, const domo_message *req, domo_mess
     if (strcmp(req->command, CMD_INFO) == 0) {
         return window_build_info_payload(window, resp->payload, sizeof(resp->payload));
     }
+
+    if (strcmp(req->command, CMD_LINK) == 0) {
+        int parent_id;
+        int rc = sscanf(req->payload, "parent,%d", &parent_id);
+
+        if(rc != 1 || parent_id < 0){
+            resp->status = ERR_INVALID_PARAMETERS;
+            snprintf(resp->payload, sizeof(resp->payload), "invalid link payload");
+            return OK;
+        }
+
+        window->base.info.logical_parent_id = parent_id;
+        snprintf(resp->payload, sizeof(resp->payload),
+                 "window %d linked to parent %d",
+                 window->base.info.id,
+                 parent_id);
+        return OK;
+    }
+
     //if I am asking a switch(open/close)
     if (strcmp(req->command, CMD_SWITCH) == 0) {
-        //Ci sono 2 ettichette open and close. Entrambe sono sempre a off. Quando viene chiamato "switch 2 open on" 
-        //lo stato diventa open
-
-
-        // VIt has to be on or off
+        
+        // Validazione rigorosa arg2
         if (strcmp(req->arg2, "on") != 0 && strcmp(req->arg2, "off") != 0) {
             resp->status = ERR_INVALID_PARAMETERS;
             snprintf(resp->payload, sizeof(resp->payload), "invalid switch position");
             return OK;
         }
 
-        // it has to be "open" or "close"
-        if (strcmp(req->arg1, "open") != 0 && strcmp(req->arg1, "close") != 0) {
+        // Validazione arg1: accetta "open", "close" e l'etichetta universale "sys_state"
+        if (strcmp(req->arg1, "open") != 0 && strcmp(req->arg1, "close") != 0 && strcmp(req->arg1, "sys_state") != 0) {
             resp->status=ERR_INVALID_PARAMETERS;
             snprintf(resp->payload, sizeof(resp->payload), "invalid switch label");
             return OK;
@@ -115,18 +130,23 @@ static int window_handle_message(device *dev, const domo_message *req, domo_mess
 
         update_usage_time(window);
 
-        if (strcmp(req->arg2, "on") == 0) 
-        {
-            if(strcmp(req->arg1, "open") == 0) {
+        if (strcmp(req->arg2, "on") == 0) {
+            if(strcmp(req->arg1, "open") == 0 || strcmp(req->arg1, "sys_state") == 0) {
                 window->base.info.state = STATE_OPEN;
-                
-                window->last_state_change = time(NULL) ; 
+                window->last_state_change = time(NULL); 
                 window->open_switch_state = 1;
                 window->close_switch_state = 0;
-            }else if (strcmp(req->arg1, "close") == 0) {
-
+            } else if (strcmp(req->arg1, "close") == 0) {
                 window->base.info.state = STATE_CLOSED;
-                
+                window->last_state_change = 0; 
+                window->close_switch_state = 1;
+                window->open_switch_state = 0;
+            }
+        } 
+        else if (strcmp(req->arg2, "off") == 0) {
+            // Un "sys_state off" forza inesorabilmente la chiusura
+            if(strcmp(req->arg1, "sys_state") == 0 || strcmp(req->arg1, "close") == 0) {
+                window->base.info.state = STATE_CLOSED;
                 window->last_state_change = 0; 
                 window->close_switch_state = 1;
                 window->open_switch_state = 0;

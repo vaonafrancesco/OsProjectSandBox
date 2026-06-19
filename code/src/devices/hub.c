@@ -239,12 +239,12 @@ static int extract_child_state_from_info(const char *payload, state *out_state)
         return ERR_INVALID_PARAMETERS;
     }
 
-    if (strstr(payload, "state=on") != NULL) {
+    if (strstr(payload, "state=on") != NULL || strstr(payload, "state=open") != NULL) {
         *out_state = STATE_ON;
         return OK;
     }
 
-    if (strstr(payload, "state=off") != NULL) {
+    if (strstr(payload, "state=off") != NULL || strstr(payload, "state=closed") != NULL) {
         *out_state = STATE_OFF;
         return OK;
     }
@@ -310,7 +310,7 @@ static int hub_propagate_to_children(device *dev, const domo_message *req)
     hub_device *hub = (hub_device *)dev;
     int rc;
     int i;
-    char label[32];
+    char label_dump[32]; // Usato solo per estrarre la position originaria
     char position[32];
     char payload[96];
     state expected_state;
@@ -324,7 +324,7 @@ static int hub_propagate_to_children(device *dev, const domo_message *req)
         return rc;
     }
 
-    rc = parse_switch_args(req, label, sizeof(label), position, sizeof(position));
+    rc = parse_switch_args(req, label_dump, sizeof(label_dump), position, sizeof(position));
     if (rc != OK) {
         return rc;
     }
@@ -334,7 +334,8 @@ static int hub_propagate_to_children(device *dev, const domo_message *req)
         return rc;
     }
 
-    snprintf(payload, sizeof(payload), "%s,%s", label, position);
+    // Costruisce il payload universale bypassando le label specifiche delle foglie
+    snprintf(payload, sizeof(payload), "sys_state,%s", position);
 
     for (i = 0; i < hub->child_count; ++i) {
         domo_message child_resp;
@@ -342,15 +343,17 @@ static int hub_propagate_to_children(device *dev, const domo_message *req)
         rc = hub_send_command_to_child(hub,
                                        hub->children[i],
                                        CMD_SWITCH,
-                                       label,
+                                       "sys_state",
                                        position,
                                        payload,
                                        &child_resp);
         if (rc != OK) {
-            return rc;
+            continue; // La system call IPC è fallita (es. pipe rotta/figlio morto)
         }
 
         if (child_resp.status != OK) {
+            // Nessun errore viene più ignorato. Se una foglia rifiuta il comando universale,
+            // l'albero è inconsistente e la propagazione fallisce.
             return child_resp.status;
         }
     }
@@ -551,7 +554,7 @@ static int hub_handle_message(device *dev, const domo_message *req, domo_message
             return OK;
         }
 
-        if (strcmp(label, "power") != 0) {
+        if (strcmp(label, "power") != 0 && strcmp(label, "sys_state") != 0) {
             resp->status = ERR_INVALID_PARAMETERS;
             snprintf(resp->payload, sizeof(resp->payload), "invalid switch label");
             return OK;

@@ -104,6 +104,24 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
         return fridge_build_info_payload(fridge, resp->payload, sizeof(resp->payload));
     }
 
+    if(strcmp(req->command, CMD_LINK) == 0){
+        int parent_id;
+        int rc = sscanf(req->payload, "parent,%d", &parent_id);
+
+        if(rc != 1 || parent_id < 0){
+            resp->status = ERR_INVALID_PARAMETERS;
+            snprintf(resp->payload, sizeof(resp->payload), "invalid link payload");
+            return OK;
+        }
+
+        fridge->base.info.logical_parent_id = parent_id;
+        snprintf(resp->payload, sizeof(resp->payload),
+                 "fridge %d linked to parent %d",
+                 fridge->base.info.id,
+                 parent_id);
+        return OK;
+    }
+
     if(strcmp(req->command, CMD_SWITCH) == 0){
 
         if(strcmp(req->arg1, "temperature") !=0){
@@ -114,7 +132,7 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
             }
         }
         
-        if(strcmp(req->arg1, "open") == 0){
+        if(strcmp(req->arg1, "open") == 0|| strcmp(req->arg1, "sys_state") == 0){
             if(strcmp(req->arg2, "on")== 0){
                 fridge->base.info.state =STATE_ON;
                 fridge->last_open_time = time(NULL);
