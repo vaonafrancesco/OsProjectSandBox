@@ -4,6 +4,7 @@
 #include <sys/select.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 #include "common.h"
 #include "controller.h"
@@ -11,9 +12,9 @@
 #include "ipc.h"
 #include "repl.h"
 #include "cleanup.h"
-#include <stdarg.h>
 
-static int handle_stdin_event(controller *ctrl) {
+static int handle_stdin_event(controller *ctrl)
+{
     if (ctrl == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
@@ -37,6 +38,24 @@ static void eventloop_print_async_line(const char *fmt, ...)
     fflush(stderr);
 }
 
+static void eventloop_discard_pending(pending_request *req)
+{
+    if (req == NULL) {
+        return;
+    }
+
+    if (req->reply_fd >= 0) {
+        close(req->reply_fd);
+    }
+
+    if (req->reply_fifo_path[0] != '\0') {
+        unlink(req->reply_fifo_path);
+    }
+
+    memset(req, 0, sizeof(*req));
+    req->reply_fd = -1;
+}
+
 static int handle_controller_fifo_event(controller *ctrl, int fifo_fd)
 {
     int handled_any = 0;
@@ -52,8 +71,12 @@ static int handle_controller_fifo_event(controller *ctrl, int fifo_fd)
         memset(&msg, 0, sizeof(msg));
         rc = ipc_recv_message(fifo_fd, &msg);
 
+        if (rc == ERR_TIMEOUT) {
+            return handled_any ? OK : ERR_TIMEOUT;
+        }
+
         if (rc != OK) {
-            return handled_any ? OK : rc;
+            return rc;
         }
 
         handled_any = 1;
@@ -88,10 +111,63 @@ static int handle_controller_fifo_event(controller *ctrl, int fifo_fd)
     }
 }
 
-int event_loop_run(controller *ctrl) {
+static int handle_pending_reply_fds(controller *ctrl, fd_set *readfds)
+{
+    int i;
+
+    if (ctrl == NULL || readfds == NULL) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    for (i = 0; i < CONTROLLER_MAX_PENDING; ++i) {
+        pending_request *req = &ctrl->pending[i];
+        int rc;
+
+        if (!req->in_use || req->reply_fd < 0) {
+            continue;
+        }
+
+        if (!FD_ISSET(req->reply_fd, readfds)) {
+            continue;
+        }
+
+        rc = controller_complete_pending_fd(ctrl, req->reply_fd);
+        if (rc == ERR_TIMEOUT) {
+            continue;
+        }
+
+        if (rc != OK) {
+            if (req->kind == CTRL_REQ_INFO && device_is_control(req->target_type)) {
+                eventloop_print_async_line(
+                    "%s id=%d state=manual_override error=consistency_check_failed",
+                    device_type_str(req->target_type),
+                    req->target_id
+                );
+            } else if (req->kind == CTRL_REQ_INFO) {
+                eventloop_print_async_line(
+                    "info %d failed: %s",
+                    req->target_id,
+                    error_str(rc)
+                );
+            } else if (req->kind == CTRL_REQ_SWITCH) {
+                eventloop_print_async_line(
+                    "switch %d failed: %s",
+                    req->target_id,
+                    error_str(rc)
+                );
+            }
+
+            eventloop_discard_pending(req);
+        }
+    }
+
+    return OK;
+}
+
+int event_loop_run(controller *ctrl)
+{
     int fifo_fd;
     int keepalive_fd;
-    int max_fd;
     int rc;
     int prompt_visible;
 
@@ -108,11 +184,16 @@ int event_loop_run(controller *ctrl) {
 
     while (ctrl->running) {
         fd_set readfds;
+        int max_fd;
+        struct timeval tv;
+        int i;
 
         if (cleanup_has_pending_sigchld()) {
             cleanup_reap_terminated_children(ctrl);
             prompt_visible = 0;
         }
+
+        controller_expire_pending(ctrl);
 
         FD_ZERO(&readfds);
         FD_SET(STDIN_FILENO, &readfds);
@@ -120,12 +201,28 @@ int event_loop_run(controller *ctrl) {
 
         max_fd = (STDIN_FILENO > fifo_fd) ? STDIN_FILENO : fifo_fd;
 
+        for (i = 0; i < CONTROLLER_MAX_PENDING; ++i) {
+            pending_request *req = &ctrl->pending[i];
+
+            if (!req->in_use || req->reply_fd < 0) {
+                continue;
+            }
+
+            FD_SET(req->reply_fd, &readfds);
+            if (req->reply_fd > max_fd) {
+                max_fd = req->reply_fd;
+            }
+        }
+
         if (!prompt_visible) {
             repl_print_prompt();
             prompt_visible = 1;
         }
 
-        rc = select(max_fd + 1, &readfds, NULL, NULL, NULL);
+        tv.tv_sec = 0;
+        tv.tv_usec = 200000;
+
+        rc = select(max_fd + 1, &readfds, NULL, NULL, &tv);
         if (rc < 0) {
             if (errno == EINTR) {
                 if (cleanup_has_pending_sigchld()) {
@@ -134,6 +231,7 @@ int event_loop_run(controller *ctrl) {
                 }
                 continue;
             }
+
             close(fifo_fd);
             close(keepalive_fd);
             return ERR_SYSTEM;
@@ -142,6 +240,12 @@ int event_loop_run(controller *ctrl) {
         if (cleanup_has_pending_sigchld()) {
             cleanup_reap_terminated_children(ctrl);
             prompt_visible = 0;
+        }
+
+        controller_expire_pending(ctrl);
+
+        if (rc == 0) {
+            continue;
         }
 
         if (FD_ISSET(STDIN_FILENO, &readfds)) {
@@ -161,11 +265,22 @@ int event_loop_run(controller *ctrl) {
             rc = handle_controller_fifo_event(ctrl, fifo_fd);
             prompt_visible = 0;
 
-            if (rc != OK) {
+            if (rc != OK && rc != ERR_TIMEOUT) {
                 fprintf(stderr, "IPC error: %s\n", error_str(rc));
                 prompt_visible = 0;
             }
         }
+
+        if (ctrl->running) {
+            rc = handle_pending_reply_fds(ctrl, &readfds);
+            prompt_visible = 0;
+
+            if (rc != OK) {
+                fprintf(stderr, "Pending IPC error: %s\n", error_str(rc));
+            }
+        }
+
+        controller_expire_pending(ctrl);
     }
 
     close(fifo_fd);

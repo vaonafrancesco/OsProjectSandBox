@@ -65,6 +65,7 @@ static int build_manual_request(device_id id,
     memset(msg, 0, sizeof(*msg));
     snprintf(msg->sender_id, sizeof(msg->sender_id), "%s", EXT_SENDER_ID);
     msg->target_id = id;
+    msg->dst_id = id;
 
     if (strcmp(command, "info") == 0) {
         snprintf(msg->command, sizeof(msg->command), "%s", CMD_INFO);
@@ -78,18 +79,20 @@ static int build_manual_request(device_id id,
 
         
         snprintf(msg->command, sizeof(msg->command), "%s", CMD_SWITCH);
-        snprintf(msg->payload, sizeof(msg->payload), "%s %s", param1, param2);
+        snprintf(msg->arg1, sizeof(msg->arg1), "%s", param1);
+        snprintf(msg->arg2, sizeof(msg->arg2), "%s", param2);
         return OK;
     }
 
-    if (strcmp(command, "set") == 0) {
+    if (strcmp(command, "set") == 0 || strcmp(command, "SET") == 0) {
         if (param1 == NULL || param2 == NULL) {
             return ERR_INVALID_PARAMETERS;
         }
 
         
         snprintf(msg->command, sizeof(msg->command), "%s", "SET");
-        snprintf(msg->payload, sizeof(msg->payload), "%s %s", param1, param2);
+        snprintf(msg->arg1, sizeof(msg->arg1), "%s", param1);
+        snprintf(msg->arg2, sizeof(msg->arg2), "%s", param2);
         return OK;
     }
 

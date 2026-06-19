@@ -23,12 +23,14 @@ typedef struct {
     int thermostat_temp;
 } fridge_device;
 
+static int fridge_update(device *dev);
+
 static const char *state_str(state state) 
 {
-    switch(state) {
-        case STATE_ON: return "on";
-        case STATE_OFF: return "off";
-        default: return "unknown";
+    if (state == STATE_ON){
+        return "open";
+    }else{
+        return "closed";
     }
 }
 
@@ -54,14 +56,20 @@ static int fridge_build_info_payload(const fridge_device *fridge, char *buf, siz
         return ERR_INVALID_PARAMETERS;
     }
 
+    unsigned long current_open_time = 0;
+
+    if (fridge->base.info.state == STATE_ON && fridge->last_state_change != 0){
+        current_open_time = (unsigned long)(time(NULL)- fridge->last_state_change);
+    }
     update_open_time((fridge_device *)fridge);
 
     snprintf(buf, len,
-             "fridge id=%d state=%s time=%lu delay=%d perc=%d temp=%d thermostat=%d",
+             "fridge id=%d state=%s time_since_open=%lu delay=%d time= %lu perc=%d temp=%d thermostat=%d",
              fridge->base.info.id, 
              state_str(fridge->base.info.state), 
-             fridge->total_open_time,
+             current_open_time,
              fridge->delay_seconds,
+             fridge->total_open_time,
              fridge->fill_percentage,
              fridge->current_temp,
              fridge->thermostat_temp);
@@ -76,8 +84,11 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
         return ERR_INVALID_PARAMETERS;
     }
 
+    fridge_update(dev);
+
     memset(resp, 0, sizeof(*resp));
     resp->kind = MSG_RESPONSE;
+    //I have to check here because something is off I think
     snprintf(resp->command, sizeof(resp->command), "%s", req->command);
     //line for the 
     snprintf(resp->sender_id, sizeof(resp->sender_id), "%d", fridge->base.info.id);
@@ -94,26 +105,44 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
     }
 
     if(strcmp(req->command, CMD_SWITCH) == 0){
-        if(strcmp(req->arg1, "open") == 0) {
-            update_open_time(fridge);
 
-            if(strcmp(req->arg2, "on") == 0){
-                fridge->base.info.state = STATE_ON;
-                fridge->last_open_time = time(NULL);
-            } else if(strcmp(req->arg2, "off") == 0) {
-                fridge->base.info.state = STATE_OFF;
-                fridge->last_open_time = 0;
-            } else {
+        if(strcmp(req->arg1, "temperature") !=0){
+            if(strcmp(req->arg2, "on") != 0 && strcmp(req->arg2, "off") != 0){
                 resp->status = ERR_INVALID_PARAMETERS;
                 snprintf(resp->payload, sizeof(resp->payload), "invalid switch position");
                 return OK;
             }
-
-            snprintf(resp->payload, sizeof(resp->payload),
-                     "fridge %d switched %s", fridge->base.info.id, state_str(fridge->base.info.state));
+        }
+        
+        if(strcmp(req->arg1, "open") == 0){
+            if(strcmp(req->arg2, "on")== 0){
+                fridge->base.info.state =STATE_ON;
+                fridge->last_open_time = time(NULL);
+                fridge->last_state_change = time(NULL);
+            }else if(strcmp(req->arg2, "off") == 0){
+                fridge->base.info.state = STATE_OFF;
+                fridge->last_open_time = 0;
+            }
+            snprintf(resp->payload, sizeof(resp->payload),"fridge %d switched %s",
+                         fridge->base.info.id, state_str(fridge->base.info.state));
             return OK;
         }
 
+        if(strcmp(req->arg1, "close") == 0){
+            if(strcmp(req->arg2, "on")== 0){
+                fridge->base.info.state = STATE_OFF;
+                fridge->last_open_time = 0;
+            }else if(strcmp(req->arg2, "off") == 0){
+                fridge->base.info.state =STATE_ON;
+                fridge->last_open_time = time(NULL);
+                fridge->last_state_change = time(NULL);
+            }
+            snprintf(resp->payload, sizeof(resp->payload),"fridge %d switched %s",
+                         fridge->base.info.id, state_str(fridge->base.info.state));
+            return OK;
+        }
+
+      
         if (strcmp(req->arg1, "temperature") == 0) {
             if(strcmp(req->arg2, "up") == 0) {
                 fridge->thermostat_temp++;
@@ -188,6 +217,8 @@ static int fridge_init(device *dev)
         return ERR_INVALID_PARAMETERS;
     }
 
+    fridge->base.info.state = STATE_OFF;
+
     // initialize fridge state
     fridge->last_state_change = 0;
     fridge->last_open_time = 0;
@@ -222,11 +253,18 @@ static int fridge_update(device *dev) {
     // Update open time counter
     update_open_time(fridge);
     
+
+
     // Check for auto-close based on delay
-    if (fridge->base.info.state == STATE_ON && 
-        fridge->total_open_time >= (unsigned long)fridge->delay_seconds) {
-        fridge->base.info.state = STATE_OFF;
-        fridge->last_open_time = 0;
+    if (fridge->base.info.state == STATE_ON && fridge->last_state_change != 0) {
+        time_t now = time(NULL);
+
+        if ((now - fridge->last_state_change) >= fridge->delay_seconds){
+            
+            fridge->base.info.state = STATE_OFF;
+            fridge->last_open_time = 0;
+            fridge->last_state_change = 0;
+        }
     }
     
     return OK;

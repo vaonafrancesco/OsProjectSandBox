@@ -1,19 +1,18 @@
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
 
-#include "../../include/protocol.h"
-#include "../../include/ipc.h"
 #include "../../include/error_codes.h"
+#include "../../include/ipc.h"
+#include "../../include/protocol.h"
 #include "../../include/serialization.h"
 
 int ipc_recv_message(int fd_in, domo_message *msg)
 {
     char buffer[MAX_MSG_LEN];
-    ssize_t bytes_read;
     size_t total_read = 0;
 
     if (fd_in < 0 || msg == NULL) {
@@ -24,31 +23,36 @@ int ipc_recv_message(int fd_in, domo_message *msg)
     memset(buffer, 0, sizeof(buffer));
 
     while (total_read < sizeof(buffer) - 1) {
+        char ch;
+        ssize_t bytes_read;
+
         do {
-            bytes_read = read(fd_in, buffer + total_read, sizeof(buffer) - 1 - total_read);
+            bytes_read = read(fd_in, &ch, 1);
         } while (bytes_read < 0 && errno == EINTR);
 
         if (bytes_read < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return (total_read == 0) ? ERR_TIMEOUT : ERR_IPC_FAILURE;
+            }
             return ERR_IPC_FAILURE;
         }
 
         if (bytes_read == 0) {
-            break;
+            if (total_read == 0) {
+                return ERR_TIMEOUT;
+            }
+            return ERR_IPC_FAILURE;
         }
 
-        total_read += (size_t)bytes_read;
+        buffer[total_read++] = ch;
 
-        if (memchr(buffer, NEWLINE_CHAR, total_read) != NULL) {
-            break;
+        if (ch == NEWLINE_CHAR) {
+            buffer[total_read] = '\0';
+            return deserialize_message(buffer, msg);
         }
     }
 
-    if (total_read == 0) {
-        return ERR_TIMEOUT;
-    }
-
-    buffer[total_read] = '\0';
-    return deserialize_message(buffer, msg);
+    return ERR_IPC_FAILURE;
 }
 
 int ipc_send_message(const domo_message *msg)
@@ -109,4 +113,3 @@ int ipc_send_message(const domo_message *msg)
     close(fd_out);
     return OK;
 }
-

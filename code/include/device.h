@@ -29,15 +29,15 @@ typedef struct device device ;
 
 typedef int (*device_init)(device *dev) ;
 typedef int (*device_handle)( device *dev,const domo_message *req,domo_message *resp);
-typedef int (*device_update)(device *dev);
 typedef int (*device_destroy)(device *dev);
+typedef int (*device_update) (device *dev);
 
 struct device_impl;
 
 
 struct device {
     device_info info;
-    
+
     size_t child_count;
     size_t child_capacity;
     device_id *child_ids;

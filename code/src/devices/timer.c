@@ -17,6 +17,8 @@ typedef struct {
     bool manual_override;
 } timer_device;
 
+static int timer_update(device *dev);
+
 static const char *state_str(state state) 
 {
     switch(state) {
@@ -87,22 +89,23 @@ static int __attribute__((unused)) check_time_in_past(const char *time_str) {
 
 static int timer_propagate_to_children(device *dev,const domo_message *req) 
 {
-    device_id children[MAX_DEVICES];
-    int child_count=0;
+   /*device_id children[MAX_DEVICES];
+    int child_count=0;*/
     int rc;
-    int i;
+    size_t i;
 
     if(dev==NULL || req==NULL) {
         return ERR_INVALID_PARAMETERS ;
     }
 
-    rc=routing_collect_children(dev->info.id,children,MAX_DEVICES,&child_count) ;
-    if(rc!=OK) {
-        return rc;
-    }
 
     // forward to all children devices
-    for(i=0;i<child_count;i++) {
+    for(i=0;i< dev->child_count;i++) {
+
+        device_id child_id = dev->child_ids[i];
+
+        if (child_id<0) continue;
+
         domo_message child_req;
         char child_fifo[PATH_MAX];
 
@@ -111,15 +114,16 @@ static int timer_propagate_to_children(device *dev,const domo_message *req)
         snprintf(child_req.sender_id,sizeof(child_req.sender_id),"%d",dev->info.id);
         snprintf(child_req.command,sizeof(child_req.command),"%s",req->command) ;
         child_req.src_id=dev->info.id;
-        child_req.dst_id=children[ i ] ;
-        child_req.target_id=children[ i ];
+        child_req.dst_id= child_id;   
+        child_req.target_id= child_id; 
         child_req.src_pid=getpid();
         child_req.request_id=(int)getpid() ;
         snprintf(child_req.arg1,sizeof(child_req.arg1),"%s",req->arg1) ;
         snprintf(child_req.arg2,sizeof(child_req.arg2),"%s",req->arg2);
         snprintf(child_req.payload,sizeof(child_req.payload),"%s",req->payload) ;
 
-        if(make_device_fifo_path(children[ i ],child_fifo,sizeof(child_fifo))!=OK) {
+        
+       if(make_device_fifo_path(child_id, child_fifo, sizeof(child_fifo)) != OK) {
             continue;
         }
 
@@ -149,6 +153,42 @@ static int timer_build_info_payload(timer_device *timer,char *buf,size_t len) {
     return OK;
 }
 
+static int parse_child_id_payload(const char *payload, device_id *child_id_out)
+{
+    int id;
+
+    if (payload == NULL || child_id_out == NULL) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    if (sscanf(payload, "%d", &id) != 1 || id < 0) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    *child_id_out = (device_id)id;
+    return OK;
+}
+
+static int parse_link_parent_id(const domo_message *req, int *parent_id_out)
+{
+    int parent_id;
+
+    if (req == NULL || parent_id_out == NULL) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    if (sscanf(req->payload, "parent,%d", &parent_id) != 1) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    if (parent_id < 0) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    *parent_id_out = parent_id;
+    return OK;
+}
+
 static int timer_handle_message(device *dev,const domo_message *req,domo_message *resp) 
 {
     timer_device *timer=(timer_device *)dev;
@@ -156,6 +196,7 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
     if(timer==NULL || req==NULL || resp==NULL) {
         return ERR_INVALID_PARAMETERS ;
     }
+    timer_update(dev);
 
     memset(resp,0,sizeof(*resp));
     resp->kind=MSG_RESPONSE ;
@@ -184,6 +225,7 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
         }
 
         timer->manual_override=false ;
+        timer->base.info.manual_override = false;
 
         if(strcmp(req->arg2,"on")==0) {
             timer->base.info.state=STATE_ON ;
@@ -203,6 +245,7 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
     if(strcmp(req->command,CMD_STATUS)==0) {
         if(strncmp(req->payload,"manual_override,",16)==0) {
             timer->manual_override=true ;
+            timer->base.info.manual_override = true;
         }
         return OK;
     }
@@ -215,13 +258,8 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
                 snprintf(resp->payload,sizeof(resp->payload),"invalid time format (HH:MM)");
                 return OK;
             }
-            // Validate begin < end
-            if(compare_times(req->arg2,timer->end_time)>=0) {
-                resp->status=ERR_INVALID_PARAMETERS;
-                snprintf(resp->payload,sizeof(resp->payload),"begin must be before end");
-                return OK;
-            }
-            snprintf(timer->begin_time,sizeof(timer->begin_time),"%s",req->arg2);
+            
+            snprintf(timer->begin_time,sizeof(timer->begin_time),"%.5s",req->arg2);
             snprintf(resp->payload,sizeof(resp->payload),"timer %d begin set to %s",timer->base.info.id,timer->begin_time);
             return OK;
         }
@@ -233,13 +271,8 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
                 snprintf(resp->payload,sizeof(resp->payload),"invalid time format (HH:MM)");
                 return OK;
             }
-            // Validate begin < end
-            if(compare_times(timer->begin_time,req->arg2)>=0) {
-                resp->status=ERR_INVALID_PARAMETERS;
-                snprintf(resp->payload,sizeof(resp->payload),"end must be after begin");
-                return OK;
-            }
-            snprintf(timer->end_time,sizeof(timer->end_time),"%s",req->arg2);
+            
+            snprintf(timer->end_time,sizeof(timer->end_time),"%.5s",req->arg2);
             snprintf(resp->payload,sizeof(resp->payload),"timer %d end set to %s",timer->base.info.id,timer->end_time);
             return OK;
         }
@@ -249,35 +282,181 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
         return OK;
     }
 
+    if (strcmp(req->command, CMD_CHILD_ADDED) == 0) {
+        device_id child_id;
+        int rc = parse_child_id_payload(req->payload, &child_id);
+
+        if (rc != OK) {
+            resp->status = ERR_INVALID_PARAMETERS;
+            snprintf(resp->payload, sizeof(resp->payload), "invalid child_added payload");
+            return OK;
+        }
+
+        if (timer->base.child_ids == NULL || timer->base.child_capacity < 1) {
+            resp->status = ERR_SYSTEM;
+            snprintf(resp->payload, sizeof(resp->payload), "timer child storage not initialized");
+            return OK;
+        }
+
+        timer->base.child_ids[0] = child_id;
+        timer->base.child_count = 1;
+
+        snprintf(resp->payload, sizeof(resp->payload),
+                 "timer %d added child %d",
+                 timer->base.info.id,
+                 child_id);
+        return OK;
+    }
+
+    if (strcmp(req->command, CMD_CHILD_REMOVED) == 0) {
+        device_id child_id;
+        int rc = parse_child_id_payload(req->payload, &child_id);
+
+        if (rc != OK) {
+            resp->status = ERR_INVALID_PARAMETERS;
+            snprintf(resp->payload, sizeof(resp->payload), "invalid child_removed payload");
+            return OK;
+        }
+
+        if (timer->base.child_ids != NULL &&
+            timer->base.child_count == 1 &&
+            timer->base.child_ids[0] == child_id) {
+            timer->base.child_ids[0] = NO_PARENT;
+            timer->base.child_count = 0;
+        }
+
+        snprintf(resp->payload, sizeof(resp->payload),
+                 "timer %d removed child %d",
+                 timer->base.info.id,
+                 child_id);
+        return OK;
+    }
+
+    if (strcmp(req->command, CMD_LINK) == 0) {
+        int parent_id;
+        int rc = parse_link_parent_id(req, &parent_id);
+
+        if (rc != OK) {
+            resp->status = ERR_INVALID_PARAMETERS;
+            snprintf(resp->payload, sizeof(resp->payload), "invalid link payload");
+            return OK;
+        }
+
+        timer->base.info.logical_parent_id = parent_id;
+        snprintf(resp->payload, sizeof(resp->payload),
+                 "timer %d linked to parent %d",
+                 timer->base.info.id,
+                 parent_id);
+        return OK;
+    }
+
     resp->status=ERR_INVALID_COMMAND ;
     snprintf(resp->payload,sizeof(resp->payload),"unknown command");
     return OK;
 }
 
 static int timer_init(device *dev) {
-    timer_device *timer=(timer_device *)dev;
+    timer_device *timer = (timer_device *)dev;
 
-    if(timer==NULL) {
-        return ERR_INVALID_PARAMETERS ;
+    if (timer == NULL) {
+        return ERR_INVALID_PARAMETERS;
     }
 
-    timer->manual_override=false;
-    timer->base.info.state=STATE_OFF ;
-    strcpy(timer->begin_time,"00:00") ;
-    strcpy(timer->end_time,"00:00");
+    timer->manual_override = false;
+    timer->base.info.state = STATE_OFF;
+    timer->base.info.manual_override = false;
+    strcpy(timer->begin_time, "00:00");
+    strcpy(timer->end_time, "00:00");
+
+    timer->base.child_capacity = 1;
+    timer->base.child_count = 0;
+    timer->base.child_ids = malloc(sizeof(device_id));
+    if (timer->base.child_ids == NULL) {
+        return ERR_SYSTEM;
+    }
+    timer->base.child_ids[0] = NO_PARENT;
 
     return OK;
 }
 
 static int timer_destroy(device *dev) {
-    timer_device *timer=(timer_device *)dev;
+    timer_device *timer = (timer_device *)dev;
 
-    if(timer==NULL) {
-        return ERR_INVALID_PARAMETERS ;
+    if (timer == NULL) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    free(timer->base.child_ids);
+    timer->base.child_ids = NULL;
+    timer->base.child_count = 0;
+    timer->base.child_capacity = 0;
+
+    return OK;
+}
+
+
+static int timer_update(device *dev){
+    timer_device *timer = (timer_device *)dev;
+
+    if (timer == NULL){
+        return ERR_INVALID_PARAMETERS;
+    }
+    if (strcmp(timer->begin_time, "00:00")== 0 && strcmp(timer->end_time, "00:00")==0){
+        return OK;
+    }
+    if (timer->manual_override) {
+        return OK;
+    }
+
+    time_t now;
+    struct tm *tm_now;
+    char current_time_str[6];
+
+
+    time(&now);
+    tm_now = localtime(&now);
+    snprintf(current_time_str, sizeof(current_time_str), "%02d:%02d",tm_now->tm_hour, tm_now->tm_min);
+
+    bool is_on =false;
+
+    if(compare_times(timer->begin_time, timer->end_time) <0){
+        if (compare_times(current_time_str, timer->begin_time) >= 0 && compare_times(current_time_str, timer->end_time)<0){
+            is_on = true;
+        }
+    }else if (compare_times(timer->begin_time, timer->end_time)>0){
+        if (compare_times(current_time_str, timer->begin_time)>=0 || compare_times(current_time_str, timer->end_time)<0){
+            is_on = true;
+        }
+    }
+
+    state target_state = is_on ? STATE_ON : STATE_OFF;
+
+    if (timer->base.info.state != target_state && timer->base.child_count > 0){
+        domo_message auto_req;
+        memset(&auto_req, 0, sizeof(auto_req));
+
+        snprintf(auto_req.command, sizeof(auto_req.command), "%s", CMD_SWITCH);
+        snprintf(auto_req.arg1, sizeof(auto_req.arg1), "main");
+        snprintf(auto_req.arg2, sizeof(auto_req.arg2), is_on ? "on" : "off");
+
+        int rc = timer_propagate_to_children(dev, &auto_req);
+        if (rc == OK){
+
+            timer->base.info.state = target_state;
+        }
     }
 
     return OK;
 }
+
+
+
+
+
+
+
+
+
 
 int timer_device_main(device_id id) {
     timer_device timer;
@@ -292,6 +471,9 @@ int timer_device_main(device_id id) {
 
     timer.base.handle_message=timer_handle_message;
     timer.base.destroy=timer_destroy;
+
+    timer.base.update = timer_update;
+
     rc=timer_init(&timer.base) ;
     if(rc!=OK) {
         return rc;
