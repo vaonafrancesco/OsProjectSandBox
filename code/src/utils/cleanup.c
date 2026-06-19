@@ -83,8 +83,13 @@ int cleanup_reap_terminated_children(controller *ctrl)
 
     while ((dead_pid = waitpid(-1, &status, WNOHANG)) > 0) {
         if (controller_finalize_dead_device(ctrl, dead_pid, status) != OK) {
+            // Debug log - commented out
+            /**
+             * Quando: Quando un processo figlio muore ma il controller fallisce nel finalizzarlo (rimuoverlo dal sistema)
+Cosa stampa: Il PID del processo che non è stato finalizzato correttamente
+             */
             fprintf(stderr,
-                    "\n[cleanup] Failed to finalize pid=%ld\n",
+                 "\n[cleanup] Failed to finalize pid=%ld\n",
                     (long)dead_pid);
         }
         reaped_count++;

@@ -143,6 +143,8 @@ int controller_finalize_dead_device(controller *ctrl, pid_t dead_pid, int status
     int rc;
     int notify_rc;
 
+    (void)status;  //debug log(da togliere in teoria) Parameter unused after debug logs commented out
+
     if (ctrl == NULL || dead_pid <= 0) {
         return ERR_INVALID_PARAMETERS;
     }
@@ -160,38 +162,45 @@ int controller_finalize_dead_device(controller *ctrl, pid_t dead_pid, int status
         parent_id = CONTROLLER_ID;
     }
 
-    if (WIFSIGNALED(status)) {
-        fprintf(stderr,
-                "\n[cleanup] Device crashed: id=%d pid=%ld signal=%d type=%s\n",
-                dead_device.info.id,
-                (long)dead_pid,
-                WTERMSIG(status),
-                device_type_str(dead_device.info.type));
-    } else if (WIFEXITED(status)) {
-        fprintf(stderr,
-                "\n[cleanup] Device exited: id=%d pid=%ld exit_status=%d type=%s\n",
-                dead_device.info.id,
-                (long)dead_pid,
-                WEXITSTATUS(status),
-                device_type_str(dead_device.info.type));
-    } else {
-        fprintf(stderr,
-                "\n[cleanup] Device terminated: id=%d pid=%ld type=%s\n",
-                dead_device.info.id,
-                (long)dead_pid,
-                device_type_str(dead_device.info.type));
-    }
+    // Debug log - commented out
+    /**
+     * Quando: Quando un dispositivo crasha o termina
+Cosa stampa: ID, PID, segnale di terminazione, tipo di dispositivo
+     */
+    // if (WIFSIGNALED(status)) {
+    //     fprintf(stderr,
+    //             "\n[cleanup] Device crashed: id=%d pid=%ld signal=%d type=%s\n",
+    //             dead_device.info.id,
+    //             (long)dead_pid,
+    //             WTERMSIG(status),
+    //             device_type_str(dead_device.info.type));
+    // } else if (WIFEXITED(status)) {
+    //     fprintf(stderr,
+    //             "\n[cleanup] Device exited: id=%d pid=%ld exit_status=%d type=%s\n",
+    //             dead_device.info.id,
+    //             (long)dead_pid,
+    //             WEXITSTATUS(status),
+    //             device_type_str(dead_device.info.type));
+    // } else {
+    //     fprintf(stderr,
+    //             "\n[cleanup] Device terminated: id=%d pid=%ld type=%s\n",
+    //             dead_device.info.id,
+    //             (long)dead_pid,
+    //             device_type_str(dead_device.info.type));
+    // }
 
     notify_rc = controller_notify_parent_child_removed(ctrl, dead_id, parent_id);
     if (notify_rc != OK && notify_rc != ERR_DEVICE_NOT_FOUND) {
-        fprintf(stderr,
-                "[cleanup] Warning: failed to notify parent %d about dead child %d\n",
-                parent_id, dead_id);
+        // Debug log - commented out
+        // fprintf(stderr,
+        //         "[cleanup] Warning: failed to notify parent %d about dead child %d\n",
+        //         parent_id, dead_id);
     }
 
     rc = routing_remove_node(dead_id);
     if (rc != OK && rc != ERR_DEVICE_NOT_FOUND) {
-        fprintf(stderr, "[cleanup] Warning: failed to remove routing node for %d\n", dead_id);
+        // Debug log - commented out
+        // fprintf(stderr, "[cleanup] Warning: failed to remove routing node for %d\n", dead_id);
     }
 
     controller_remove_device_fifo(&dead_device);
@@ -199,8 +208,9 @@ int controller_finalize_dead_device(controller *ctrl, pid_t dead_pid, int status
 
     rc = write_registry(ctrl);
     if (rc != OK) {
-        fprintf(stderr, "[cleanup] Failed to update registry\n");
-        fflush(stderr);
+        // Debug log - commented out
+        // fprintf(stderr, "[cleanup] Failed to update registry\n");
+        // fflush(stderr);
         return rc;
     }
 

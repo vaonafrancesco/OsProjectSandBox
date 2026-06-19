@@ -395,6 +395,64 @@ static int timer_destroy(device *dev) {
 }
 
 
+static int timer_get_child_device_type(device *dev, device_type *type_out) {
+    timer_device *timer = (timer_device *)dev;
+    domo_message req, resp;
+    char target_fifo[PATH_MAX];
+    char reply_fifo[PATH_MAX];
+    int rc;
+
+    if (dev == NULL || type_out == NULL) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    if (timer->base.child_count == 0) {
+        return ERR_INVALID_PARAMETERS;
+    }
+
+    device_id child_id = timer->base.child_ids[0];
+
+    memset(&req, 0, sizeof(req));
+    memset(&resp, 0, sizeof(resp));
+
+    req.kind = MSG_REQUEST;
+    snprintf(req.command, sizeof(req.command), "%s", CMD_INFO);
+    snprintf(req.sender_id, sizeof(req.sender_id), "%d", dev->info.id);
+    req.src_id = dev->info.id;
+    req.dst_id = child_id;
+    req.target_id = child_id;
+    req.src_pid = getpid();
+    req.request_id = (int)getpid();
+    req.status = OK;
+
+    rc = make_device_fifo_path(child_id, target_fifo, sizeof(target_fifo));
+    if (rc != OK) {
+        return rc;
+    }
+
+    rc = make_reply_fifo_path(req.src_pid, req.request_id, reply_fifo, sizeof(reply_fifo));
+    if (rc != OK) {
+        return rc;
+    }
+
+    rc = request_reply_timeout(target_fifo, reply_fifo, &req, &resp, TIMEOUT_DEVICE);
+    if (rc != OK || resp.status != OK) {
+        return rc;
+    }
+
+    if (strstr(resp.payload, "bulb id=") != NULL) {
+        *type_out = DEVICE_BULB;
+    } else if (strstr(resp.payload, "window id=") != NULL) {
+        *type_out = DEVICE_WINDOW;
+    } else if (strstr(resp.payload, "fridge id=") != NULL) {
+        *type_out = DEVICE_FRIDGE;
+    } else {
+        return ERR_DEVICE_TYPE_MISMATCH;
+    }
+
+    return OK;
+}
+
 static int timer_update(device *dev){
     timer_device *timer = (timer_device *)dev;
 
@@ -433,13 +491,33 @@ static int timer_update(device *dev){
 
     if (timer->base.info.state != target_state && timer->base.child_count > 0){
         domo_message auto_req;
+        device_type child_type;
+        int rc;
+
+        rc = timer_get_child_device_type(dev, &child_type);
+        if (rc != OK) {
+            return rc;
+        }
+
         memset(&auto_req, 0, sizeof(auto_req));
 
         snprintf(auto_req.command, sizeof(auto_req.command), "%s", CMD_SWITCH);
-        snprintf(auto_req.arg1, sizeof(auto_req.arg1), "main");
-        snprintf(auto_req.arg2, sizeof(auto_req.arg2), is_on ? "on" : "off");
 
-        int rc = timer_propagate_to_children(dev, &auto_req);
+        switch (child_type) {
+            case DEVICE_BULB:
+                snprintf(auto_req.arg1, sizeof(auto_req.arg1), "power");
+                snprintf(auto_req.arg2, sizeof(auto_req.arg2), is_on ? "on" : "off");
+                break;
+            case DEVICE_WINDOW:
+            case DEVICE_FRIDGE:
+                snprintf(auto_req.arg1, sizeof(auto_req.arg1), is_on ? "open" : "close");
+                snprintf(auto_req.arg2, sizeof(auto_req.arg2), "on");
+                break;
+            default:
+                return ERR_DEVICE_TYPE_MISMATCH;
+        }
+
+        rc = timer_propagate_to_children(dev, &auto_req);
         if (rc == OK){
 
             timer->base.info.state = target_state;

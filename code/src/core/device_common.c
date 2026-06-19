@@ -214,17 +214,18 @@ int device_common_main_loop(device *dev, int fd)
                     break;
                 }
 
-                fprintf(stderr,
-                        "[device %d] recv cmd=%s src=%d dst=%d arg1=%s arg2=%s payload=%s req=%d\n",
-                        dev->info.id,
-                        req.command,
-                        req.src_id,
-                        req.dst_id,
-                        req.arg1,
-                        req.arg2,
-                        req.payload,
-                        req.request_id);
-                fflush(stderr);
+                // Debug log - commented out
+                // fprintf(stderr,
+                //         "[device %d] recv cmd=%s src=%d dst=%d arg1=%s arg2=%s payload=%s req=%d\n",
+                //         dev->info.id,
+                //         req.command,
+                //         req.src_id,
+                //         req.dst_id,
+                //         req.arg1,
+                //         req.arg2,
+                //         req.payload,
+                //         req.request_id);
+                // fflush(stderr);
 
                 if (device_is_del_command(&req)) {
                     simulate_random_delay();
@@ -271,13 +272,18 @@ int device_common_main_loop(device *dev, int fd)
                     if (rc == OK) {
                         rc = send_message_to_fifo(reply_fifo, &resp);
                         if (rc != OK) {
-                            fprintf(stderr,
-                                    "[device %d] failed reply cmd=%s req=%d rc=%d\n",
-                                    dev->info.id,
-                                    req.command,
-                                    req.request_id,
-                                    rc);
-                            fflush(stderr);
+                            // Debug log - commented out
+                            /**
+                             * Ogni volta che un dispositivo riceve un messaggio IPC
+Cosa stampa: Tutti i dettagli del messaggio ricevuto (comando, sorgente, destinazione, argomenti, payload)
+                             */
+                            // fprintf(stderr,
+                            //         "[device %d] failed reply cmd=%s req=%d rc=%d\n",
+                            //         dev->info.id,
+                            //         req.command,
+                            //         req.request_id,
+                            //         rc);
+                            // fflush(stderr);
                         }
                     }
                 }
