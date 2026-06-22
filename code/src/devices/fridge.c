@@ -25,6 +25,7 @@ typedef struct {
 
 static int fridge_update(device *dev);
 
+// Helper to convert the generic ON/OFF state into fridge terms (OPEN/CLOSED)
 static const char *state_str(state state) 
 {
     if (state == STATE_ON){
@@ -34,6 +35,7 @@ static const char *state_str(state state)
     }
 }
 
+// Calculates how long the door has been open since the last check and adds it to the total running time.
 static void update_open_time(fridge_device *fridge) {
     if(fridge == NULL) {
         return;
@@ -48,9 +50,8 @@ static void update_open_time(fridge_device *fridge) {
     }
 }
 
-/**
- * 
- */
+/*	Packs all the fridge's custom stats into a single string 
+	to send back to the controller when it asks for 'info'.*/
 static int fridge_build_info_payload(const fridge_device *fridge, char *buf, size_t len) {
     if(fridge == NULL || buf == NULL) {
         return ERR_INVALID_PARAMETERS;
@@ -58,9 +59,11 @@ static int fridge_build_info_payload(const fridge_device *fridge, char *buf, siz
 
     unsigned long current_open_time = 0;
 
+    // If the door is currently open, calculate how long it's been open *right now*
     if (fridge->base.info.state == STATE_ON && fridge->last_state_change != 0){
         current_open_time = (unsigned long)(time(NULL)- fridge->last_state_change);
     }
+    // Make sure our total time is up to date!
     update_open_time((fridge_device *)fridge);
 
     snprintf(buf, len,
@@ -77,6 +80,7 @@ static int fridge_build_info_payload(const fridge_device *fridge, char *buf, siz
     return OK;
 }
 
+// Handles incoming IPC messages.
 static int fridge_handle_message(device *dev, const domo_message *req, domo_message *resp) 
 {
     fridge_device *fridge = (fridge_device *)dev;
@@ -84,15 +88,18 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
     if (fridge == NULL || req == NULL || resp == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
-
+	
+	// Update timers before processing the message
     fridge_update(dev);
 
+	// Setup the standard response envelope
     memset(resp, 0, sizeof(*resp));
     resp->kind = MSG_RESPONSE;
+    
     //I have to check here because something is off I think
     snprintf(resp->command, sizeof(resp->command), "%s", req->command);
-    //line for the 
     snprintf(resp->sender_id, sizeof(resp->sender_id), "%d", fridge->base.info.id);
+    
     resp->src_id = fridge->base.info.id;
     resp->dst_id = req->src_id;
     resp->src_pid = getpid();
@@ -101,10 +108,12 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
 
     simulate_random_delay();
 
+	// COMMAND: INFO
     if(strcmp(req->command, CMD_INFO) == 0){
         return fridge_build_info_payload(fridge, resp->payload, sizeof(resp->payload));
     }
-
+	
+	// COMMAND: LINK
     if(strcmp(req->command, CMD_LINK) == 0){
         int parent_id;
         int rc = sscanf(req->payload, "parent,%d", &parent_id);
@@ -122,9 +131,11 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
                  parent_id);
         return OK;
     }
-
+	
+	// COMMAND: SWITCH
     if(strcmp(req->command, CMD_SWITCH) == 0){
-
+		
+		// Validate basic 'on'/'off' arguments
         if(strcmp(req->arg1, "temperature") !=0){
             if(strcmp(req->arg2, "on") != 0 && strcmp(req->arg2, "off") != 0){
                 resp->status = ERR_INVALID_PARAMETERS;
@@ -132,12 +143,13 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
                 return OK;
             }
         }
-        
+       
+	   // Handle opening the fridge door 
         if(strcmp(req->arg1, "open") == 0|| strcmp(req->arg1, "sys_state") == 0){
             if(strcmp(req->arg2, "on")== 0){
                 fridge->base.info.state =STATE_ON;
                 fridge->last_open_time = time(NULL);
-                fridge->last_state_change = time(NULL);
+                fridge->last_state_change = time(NULL);	// Start the auto-close clock!
             }else if(strcmp(req->arg2, "off") == 0){
                 fridge->base.info.state = STATE_OFF;
                 fridge->last_open_time = 0;
@@ -147,6 +159,7 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
             return OK;
         }
 
+		// Handle closing the fridge door
         if(strcmp(req->arg1, "close") == 0){
             if(strcmp(req->arg2, "on")== 0){
                 fridge->base.info.state = STATE_OFF;
@@ -161,7 +174,7 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
             return OK;
         }
 
-      
+      	// Handle thermostat adjustments
         if (strcmp(req->arg1, "temperature") == 0) {
             if(strcmp(req->arg2, "up") == 0) {
                 fridge->thermostat_temp++;
@@ -185,15 +198,18 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
         return OK;
     }
 
-    // Handle SET command for manual-only parameters
+	// COMMAND: SET
+	/*	Handle custom properties like fill percentage and exact thermostat numbers.
+    	We only allow humans (EXT_SENDER_ID) to do this manually. */
     if(strcmp(req->command, "SET") == 0) {
-        // Only allow manual interaction for perc and thermostat
+    	
         if(strcmp(req->sender_id, EXT_SENDER_ID) != 0) {
             resp->status = ERR_PERMISSION_DENIED;
             snprintf(resp->payload, sizeof(resp->payload), "manual-only parameter");
             return OK;
         }
-
+		
+		// Set the fill percentage (0 to 100)
         if(strcmp(req->arg1, "perc") == 0) {
             int new_perc = atoi(req->arg2);
             if(new_perc < 0 || new_perc > 100) {
@@ -205,7 +221,8 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
             snprintf(resp->payload, sizeof(resp->payload), "fridge %d perc set to %d", fridge->base.info.id, fridge->fill_percentage);
             return OK;
         }
-
+        
+		// Set the exact thermostat temperature (-10 to 10)
         if(strcmp(req->arg1, "thermostat") == 0) {
             int new_temp = atoi(req->arg2);
             if(new_temp < -10 || new_temp > 10) {
@@ -228,6 +245,7 @@ static int fridge_handle_message(device *dev, const domo_message *req, domo_mess
     return OK;
 }
 
+// Initial setup with default values
 static int fridge_init(device *dev) 
 {
     fridge_device *fridge = (fridge_device *)dev;
@@ -251,6 +269,7 @@ static int fridge_init(device *dev)
     return OK;
 }
 
+// Cleanup before dying
 static int fridge_destroy(device *dev) {
     fridge_device *fridge = (fridge_device *)dev;
     
@@ -258,11 +277,12 @@ static int fridge_destroy(device *dev) {
         return ERR_INVALID_PARAMETERS;
     }
 
-    update_open_time(fridge);  // final update
+    update_open_time(fridge);  // final update to save time
     
     return OK;
 }
 
+// This function runs continuously in the main select() loop
 static int fridge_update(device *dev) {
     fridge_device *fridge = (fridge_device *)dev;
     
@@ -270,12 +290,14 @@ static int fridge_update(device *dev) {
         return ERR_INVALID_PARAMETERS;
     }
     
-    // Update open time counter
+    //1. Update open time counter
     update_open_time(fridge);
     
 
 
-    // Check for auto-close based on delay
+    //2. Check for auto-close based on delay
+    /*	If the door is open, we check how long it's been open.
+    	If the time exceeds `delay_seconds`, we forcefully close it! */
     if (fridge->base.info.state == STATE_ON && fridge->last_state_change != 0) {
         time_t now = time(NULL);
 
@@ -290,6 +312,7 @@ static int fridge_update(device *dev) {
     return OK;
 }
 
+// entry point for the fridge process
 int fridge_device_main(device_id id) {
     fridge_device fridge;
     int fd, dummy_fd;
@@ -301,7 +324,8 @@ int fridge_device_main(device_id id) {
     if(rc != OK) {
         return rc;
     }
-
+    
+	// Map object-oriented function pointers
     fridge.base.init = fridge_init;
     fridge.base.handle_message = fridge_handle_message;
     fridge.base.destroy = fridge_destroy;
@@ -321,9 +345,11 @@ int fridge_device_main(device_id id) {
     if (rc != OK) {
         return rc;
     }
-
+	
+	// Enter message processing loop
     rc = device_common_main_loop(&fridge.base, fd);
 
+	// Clean up
     device_common_cleanup(&fridge.base, fd, dummy_fd);
 
     return rc;

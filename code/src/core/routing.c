@@ -49,10 +49,12 @@ int routing_add_node(int id, device_type type)
         return ERR_INVALID_PARAMETERS;
     }
 
+	// Make sure the device isn't already in the table to avoid duplicates
     if (routing_find_index(id) >= 0) {
         return ERR_NOT_ALLOWED;
     }
 
+	// Find the first empty slot and put the new device there
     for (i = 0; i < MAX_DEVICES; i++) {
         if (routing_table[i].id == -1) {
             routing_table[i].id = id;
@@ -62,6 +64,7 @@ int routing_add_node(int id, device_type type)
         }
     }
 
+	// If we finish the loop without returning, the array is full
     return ERR_NOT_ALLOWED;
 }
 
@@ -70,7 +73,8 @@ int routing_remove_node(int id)
 {
     int i;
     int found = 0;
-
+	
+	//1: Find the device and erase it
     for (i = 0; i < MAX_DEVICES; i++) {
         if (routing_table[i].id == id) {
             routing_table[i].id = -1;
@@ -84,7 +88,8 @@ int routing_remove_node(int id)
     if (!found) {
         return ERR_DEVICE_NOT_FOUND;
     }
-
+	
+	//2: Find all its children and make them orphans (parent_id = -1)
     for (i = 0; i < MAX_DEVICES; i++) {
         if (routing_table[i].id >= 0 && routing_table[i].parent_id == id) {
             routing_table[i].parent_id = -1;
@@ -94,6 +99,7 @@ int routing_remove_node(int id)
     return OK;
 }
 
+// Retrieves the parent ID of a specific device
 int routing_get_parent_id(int id, int *parent_id_out)
 {
     int i;
@@ -112,6 +118,7 @@ int routing_get_parent_id(int id, int *parent_id_out)
     return ERR_DEVICE_NOT_FOUND;
 }
 
+// Fills an array with all the IDs of the children connected to a specific parent
 int routing_collect_children(int parent_id, device_id *children_out, int max_children, int *count_out)
 {
     int i;
@@ -126,7 +133,7 @@ int routing_collect_children(int parent_id, device_id *children_out, int max_chi
     for (i = 0; i < MAX_DEVICES; i++) {
         if (routing_table[i].id >= 0 && routing_table[i].parent_id == parent_id) {
             if (n >= max_children) {
-                return ERR_NOT_ALLOWED;
+                return ERR_NOT_ALLOWED;	// Buffer is not big enough
             }
             children_out[n++] = (device_id)routing_table[i].id;
         }
@@ -183,6 +190,7 @@ int send_message_to_fifo(const char *fifo_path, const domo_message *msg)
         return ERR_INVALID_PARAMETERS;
     }
 
+	// Convert the struct into a pipe-separated string
     len = snprintf(buffer, sizeof(buffer), "%s|%s|%d|%d|%d|%d|%d|%s|%s|%d|%s\n",
                    msg->sender_id,
                    msg->command,
@@ -200,6 +208,7 @@ int send_message_to_fifo(const char *fifo_path, const domo_message *msg)
         return ERR_IPC_FAILURE;
     }
 
+	// Open the pipe for writing.
     fd_out = open(fifo_path, O_WRONLY | O_NONBLOCK);
     if (fd_out < 0) {
         if (errno == ENXIO || errno == ENOENT) {
@@ -208,6 +217,8 @@ int send_message_to_fifo(const char *fifo_path, const domo_message *msg)
         return ERR_IPC_FAILURE;
     }
 
+	/*	Keep writing until the whole message is sent.
+		The OS might not write the whole string in one go, so a while loop is needed. */
     while (written_total < len) {
         ssize_t n = write(fd_out, buffer + written_total, (size_t)(len - written_total));
 
@@ -221,7 +232,7 @@ int send_message_to_fifo(const char *fifo_path, const domo_message *msg)
 
         if (n == 0) {
             close(fd_out);
-            return ERR_IPC_FAILURE;
+            return ERR_IPC_FAILURE;	// Pipe was closed unexpectedly
         }
 
         written_total += n;
@@ -250,7 +261,8 @@ int request_reply_timeout(const char *target_fifo, const char *reply_fifo,
     if (timeout_sec <= 0) {
         return ERR_INVALID_PARAMETERS;
     }
-
+	
+	// 1: Create our temporary "return envelope" FIFO
     unlink(reply_fifo);
     if (mkfifo(reply_fifo, 0666) != 0 && errno != EEXIST) {
         return ERR_SYSTEM;
@@ -262,6 +274,7 @@ int request_reply_timeout(const char *target_fifo, const char *reply_fifo,
         return ERR_SYSTEM;
     }
 
+	// 2: Send the actual request to the target
     rc = send_message_to_fifo(target_fifo, request);
     if (rc != OK) {
         close(fd_reply);
@@ -269,30 +282,35 @@ int request_reply_timeout(const char *target_fifo, const char *reply_fifo,
         return rc;
     }
 
+	// 3: Wait for the answer using select()
     FD_ZERO(&read_fds);
     FD_SET(fd_reply, &read_fds);
 
     tv.tv_sec = timeout_sec;
     tv.tv_usec = 0;
-
+	
+	// Wait until data arrives OR the timeout runs out.
+    // If we get an EINTR (signal interruption), we restart the select loop.
     do {
         retval = select(fd_reply + 1, &read_fds, NULL, NULL, &tv);
     } while (retval < 0 && errno == EINTR);
 
-    if (retval < 0) {
+    if (retval < 0) {	// Actual system error
         close(fd_reply);
         unlink(reply_fifo);
         return ERR_IPC_FAILURE;
     }
 
-    if (retval == 0) {
+    if (retval == 0) {	// The timer ran out before we got an answer!
         close(fd_reply);
         unlink(reply_fifo);
         return ERR_TIMEOUT;
     }
-
+	
+	// 4: We got data! Read it into the response struct
     rc = ipc_recv_message(fd_reply, response);
-
+	
+	// 5: Clean up the temporary FIFO so we don't leave trash on the disk
     close(fd_reply);
     unlink(reply_fifo);
     return rc;

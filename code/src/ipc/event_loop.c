@@ -13,6 +13,7 @@
 #include "repl.h"
 #include "cleanup.h"
 
+// Wrapper to pass the keyboard input to the REPL (Read-Eval-Print Loop)
 static int handle_stdin_event(controller *ctrl)
 {
     if (ctrl == NULL) {
@@ -22,6 +23,8 @@ static int handle_stdin_event(controller *ctrl)
     return repl_read_and_execute(ctrl);
 }
 
+/*	Used for printing asynchronous messages from devices without breaking 
+	the user's terminal prompt. Currently commented out to keep the terminal clean.*/
 static void eventloop_print_async_line(const char *fmt, ...)
 {
     // va_list ap;
@@ -41,6 +44,7 @@ static void eventloop_print_async_line(const char *fmt, ...)
     (void)fmt;  // Parameter unused after debug logs commented out
 }
 
+// Cleans up a request that we were waiting for 
 static void eventloop_discard_pending(pending_request *req)
 {
     if (req == NULL) {
@@ -59,6 +63,7 @@ static void eventloop_discard_pending(pending_request *req)
     req->reply_fd = -1;
 }
 
+// Reads messages that arrive completely out-of-the-blue on the controller's main FIFO.
 static int handle_controller_fifo_event(controller *ctrl, int fifo_fd)
 {
     int handled_any = 0;
@@ -66,14 +71,16 @@ static int handle_controller_fifo_event(controller *ctrl, int fifo_fd)
     if (ctrl == NULL || fifo_fd < 0) {
         return ERR_INVALID_PARAMETERS;
     }
-
+	
+	// Keep reading until the pipe is empty
     for (;;) {
         domo_message msg;
         int rc;
 
         memset(&msg, 0, sizeof(msg));
         rc = ipc_recv_message(fifo_fd, &msg);
-
+		
+		// If the pipe is empty, we are done here
         if (rc == ERR_TIMEOUT) {
             return handled_any ? OK : ERR_TIMEOUT;
         }
@@ -83,7 +90,8 @@ static int handle_controller_fifo_event(controller *ctrl, int fifo_fd)
         }
 
         handled_any = 1;
-
+		
+		// Print status updates sent by devices
         if (strcmp(msg.command, "STATUS") == 0) {
             eventloop_print_async_line(
                 "[status] sender=%s target=%d payload=%s",
@@ -93,7 +101,8 @@ static int handle_controller_fifo_event(controller *ctrl, int fifo_fd)
             );
             continue;
         }
-
+		
+		// Print override alerts 
         if (strcmp(msg.command, "OVERRIDE") == 0) {
             eventloop_print_async_line(
                 "[override] sender=%s target=%d payload=%s",
@@ -103,7 +112,8 @@ static int handle_controller_fifo_event(controller *ctrl, int fifo_fd)
             );
             continue;
         }
-
+		
+		// Catch-all for other unexpected IPC messages
         eventloop_print_async_line(
             "[%s] sender=%s target=%d payload=%s",
             (msg.command[0] != '\0') ? msg.command : "ipc",
@@ -114,6 +124,7 @@ static int handle_controller_fifo_event(controller *ctrl, int fifo_fd)
     }
 }
 
+// Checks all the temporary reply FIFOs we created to see if any device has answered our requests.
 static int handle_pending_reply_fds(controller *ctrl, fd_set *readfds)
 {
     int i;
@@ -138,7 +149,8 @@ static int handle_pending_reply_fds(controller *ctrl, fd_set *readfds)
         if (rc == ERR_TIMEOUT) {
             continue;
         }
-
+		
+		// If something went wrong, print a helpful error message depending on the request type
         if (rc != OK) {
             if (req->kind == CTRL_REQ_INFO && device_is_control(req->target_type)) {
                 eventloop_print_async_line(
@@ -159,7 +171,8 @@ static int handle_pending_reply_fds(controller *ctrl, fd_set *readfds)
                     error_str(rc)
                 );
             }
-
+			
+			// Free the slot
             eventloop_discard_pending(req);
         }
     }
@@ -167,6 +180,8 @@ static int handle_pending_reply_fds(controller *ctrl, fd_set *readfds)
     return OK;
 }
 
+// The main event loop
+// This keeps the controller alive and responding to everything around it.
 int event_loop_run(controller *ctrl)
 {
     int fifo_fd;
@@ -177,33 +192,41 @@ int event_loop_run(controller *ctrl)
     if (ctrl == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
-
+	
+	// Open the controller's main listening pipe
     fifo_fd = ipc_open_fifo_read(CONTROLLER_ID, &keepalive_fd);
     if (fifo_fd < 0) {
         return ERR_IPC_FAILURE;
     }
 
     prompt_visible = 0;
-
+	
+	// Keep spinning until the user types 'exit'
     while (ctrl->running) {
         fd_set readfds;
         int max_fd;
         struct timeval tv;
         int i;
-
+		
+		// Clean up any dead child processes so they don't become "zombies"
         if (cleanup_has_pending_sigchld()) {
             cleanup_reap_terminated_children(ctrl);
             prompt_visible = 0;
         }
-
+		
+		// Check if any pending requests took too long and need to be cancelled
         controller_expire_pending(ctrl);
-
+		
+		// SETUP SELECT()
+		// We tell select() which file descriptors we want to monitor.
         FD_ZERO(&readfds);
         FD_SET(STDIN_FILENO, &readfds);
         FD_SET(fifo_fd, &readfds);
-
+		
+		// select() needs to know the highest FD number it should check
         max_fd = (STDIN_FILENO > fifo_fd) ? STDIN_FILENO : fifo_fd;
-
+		
+		// Also add all the temporary reply pipes to the watch list
         for (i = 0; i < CONTROLLER_MAX_PENDING; ++i) {
             pending_request *req = &ctrl->pending[i];
 
@@ -216,17 +239,21 @@ int event_loop_run(controller *ctrl)
                 max_fd = req->reply_fd;
             }
         }
-
+		
+		// Print "domotics>" if we need to
         if (!prompt_visible) {
             repl_print_prompt();
             prompt_visible = 1;
         }
-
+		
+		// Wake up every 200 milliseconds just to run background tasks.
         tv.tv_sec = 0;
         tv.tv_usec = 200000;
-
+		
+		// Pause here until someone types, a pipe gets data, or 200ms pass.
         rc = select(max_fd + 1, &readfds, NULL, NULL, &tv);
         if (rc < 0) {
+        	// If a signal interrupted the wait, handle it and restart the loop
             if (errno == EINTR) {
                 if (cleanup_has_pending_sigchld()) {
                     cleanup_reap_terminated_children(ctrl);
@@ -250,20 +277,25 @@ int event_loop_run(controller *ctrl)
         if (rc == 0) {
             continue;
         }
-
+		
+		// EVENT: KEYBOARD INPUT
         if (FD_ISSET(STDIN_FILENO, &readfds)) {
             rc = handle_stdin_event(ctrl);
             prompt_visible = 0;
-
+		 	// If the user typed "exit", the controller stops running.
             if (!ctrl->running) {
                int retries = 5; 
+               
+               // MINI-FLUSH LOOP:
+                /*	Give the devices a tiny bit of time (5 tries of 100ms) to send 
+               		any final replies before we completely destroy the controller. */
                 while (retries-- > 0) {
                     fd_set flush_fds;
                     int flush_max_fd = -1;
                     int pending_count = 0;
                     struct timeval tv;
                     int j;
-
+					
                     FD_ZERO(&flush_fds);
                     for (j = 0; j < CONTROLLER_MAX_PENDING; ++j) {
                         if (ctrl->pending[j].in_use && ctrl->pending[j].reply_fd >= 0) {
@@ -299,7 +331,8 @@ int event_loop_run(controller *ctrl)
                 fprintf(stderr, "Input error: %s\n", error_str(rc));
             }
         }
-
+		
+		// EVENT: INCOMING BACKGROUND MESSAGE
         if (ctrl->running && FD_ISSET(fifo_fd, &readfds)) {
             rc = handle_controller_fifo_event(ctrl, fifo_fd);
             prompt_visible = 0;
@@ -309,7 +342,8 @@ int event_loop_run(controller *ctrl)
                 prompt_visible = 0;
             }
         }
-
+		
+		// EVENT: REPLY RECEIVED
         if (ctrl->running) {
             rc = handle_pending_reply_fds(ctrl, &readfds);
             prompt_visible = 0;
@@ -321,7 +355,8 @@ int event_loop_run(controller *ctrl)
 
         controller_expire_pending(ctrl);
     }
-
+	
+	// Shut down resources before exiting
     close(fifo_fd);
     close(keepalive_fd);
     return OK;

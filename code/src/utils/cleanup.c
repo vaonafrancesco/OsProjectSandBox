@@ -19,6 +19,7 @@ static volatile sig_atomic_t g_child_died = 0;
 
 int write_registry(const controller *controller);
 
+// Minimal signal handler: just sets the flag to be processed asynchronously by the main loop.
 static void sigchld_handler(int signo) {
     (void)signo;
     g_child_died = 1;
@@ -48,12 +49,16 @@ static void sigchld_handler(int signo) {
     return 0;
 }*/
 
+// Registers the SIGCHLD handler to detect when child processes terminate.
 int cleanup_install_sigchld_handler(void) {
     struct sigaction sa;
 
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = sigchld_handler;
     sigemptyset(&sa.sa_mask);
+    
+    // SA_RESTART: Prevents interrupted system calls (like select/read) from failing.
+    // SA_NOCLDSTOP: Only triggers on actual termination, ignoring paused children.
     sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
 
     if (sigaction(SIGCHLD, &sa, NULL) == -1) {
@@ -64,10 +69,13 @@ int cleanup_install_sigchld_handler(void) {
     return 0;
 }
 
+// Checks if the signal handler has caught a termination event.
 int cleanup_has_pending_sigchld(void) {
     return g_child_died ? 1 : 0;
 }
 
+// TERMINATED PROCESS HANDLER
+// Cleans up terminated children using waitpid to prevent them from becoming zombie processes.
 int cleanup_reap_terminated_children(controller *ctrl)
 {
     int status = 0;
@@ -80,14 +88,13 @@ int cleanup_reap_terminated_children(controller *ctrl)
     }
 
     g_child_died = 0;
-
+    
+    // WNOHANG ensures waitpid doesn't block the controller if no children have terminated.
+    // A loop is used to catch multiple children terminating simultaneously.
     while ((dead_pid = waitpid(-1, &status, WNOHANG)) > 0) {
+    	// Remove the device from the logical system and routing tables
         if (controller_finalize_dead_device(ctrl, dead_pid, status) != OK) {
-            // Debug log - commented out
-            /**
-             * Quando: Quando un processo figlio muore ma il controller fallisce nel finalizzarlo (rimuoverlo dal sistema)
-Cosa stampa: Il PID del processo che non è stato finalizzato correttamente
-             */
+            
             fprintf(stderr,
                     "\n[cleanup] Failed to finalize pid=%ld\n",
                     (long)dead_pid);
@@ -95,6 +102,7 @@ Cosa stampa: Il PID del processo che non è stato finalizzato correttamente
         reaped_count++;
     }
 
+	// ECHILD simply means there are no children left to wait for, which is a normal state.
     if (dead_pid == -1 && errno != ECHILD) {
         perror("waitpid");
         return -1;

@@ -19,6 +19,7 @@ typedef struct {
 
 static int timer_update(device *dev);
 
+// Simple helper to print the state
 static const char *state_str(state state) 
 {
     switch(state) {
@@ -28,6 +29,7 @@ static const char *state_str(state state)
     }
 }
 
+// Checks if the user typed the time correctly
 static int validate_time_format(const char *time_str) {
     int hours,minutes;
 
@@ -54,6 +56,7 @@ static int validate_time_format(const char *time_str) {
     return OK;
 }
 
+// Compares two "HH:MM" strings.
 static int compare_times(const char *time1,const char *time2) {
     int h1,m1,h2,m2;
 
@@ -67,7 +70,7 @@ static int compare_times(const char *time1,const char *time2) {
     return 0;
 }
 
-
+// If the timer receives a command it needs to pass that command down to whatever device it is controlling.
 static int timer_propagate_to_children(device *dev,const domo_message *req) 
 {
     int rc;
@@ -115,6 +118,7 @@ static int timer_propagate_to_children(device *dev,const domo_message *req)
     return OK;
 }
 
+// Builds the string to reply to the "info" command
 static int timer_build_info_payload(timer_device *timer,char *buf,size_t len) {
     if(timer==NULL || buf==NULL) {
         return ERR_INVALID_PARAMETERS ;
@@ -132,6 +136,7 @@ static int timer_build_info_payload(timer_device *timer,char *buf,size_t len) {
     return OK;
 }
 
+// Parsing helper
 static int parse_child_id_payload(const char *payload, device_id *child_id_out)
 {
     int id;
@@ -148,6 +153,7 @@ static int parse_child_id_payload(const char *payload, device_id *child_id_out)
     return OK;
 }
 
+// Parsing helper
 static int parse_link_parent_id(const domo_message *req, int *parent_id_out)
 {
     int parent_id;
@@ -168,6 +174,7 @@ static int parse_link_parent_id(const domo_message *req, int *parent_id_out)
     return OK;
 }
 
+// Handles incoming messages.
 static int timer_handle_message(device *dev,const domo_message *req,domo_message *resp) 
 {
     timer_device *timer=(timer_device *)dev;
@@ -175,6 +182,8 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
     if(timer==NULL || req==NULL || resp==NULL) {
         return ERR_INVALID_PARAMETERS ;
     }
+    
+    // Update the clock before processing anything
     timer_update(dev);
 
     memset(resp,0,sizeof(*resp));
@@ -188,11 +197,15 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
     resp->status=OK;
 
     simulate_random_delay();
-
+	
+	// COMMAND: INFO
     if(strcmp(req->command,CMD_INFO)==0) {
         return timer_build_info_payload(timer,resp->payload,sizeof(resp->payload));
     }
-
+	
+	// COMMAND: SWITCH
+	/*	If a human manually switches the timer, we propagate it to the child
+    	and put the timer in "manual override" mode so the clock stops interfering. */
     if( strcmp(req->command,CMD_SWITCH)==0 ){
         int rc;
 
@@ -220,7 +233,10 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
                  "timer %d switched %s",timer->base.info.id,state_str(timer->base.info.state)) ;
         return OK;
     }
-
+	
+	// COMMAND: STATUS
+	/*	If a child reports that someone manually changed its state,
+    	the timer enters manual override mode. */
     if(strcmp(req->command,CMD_STATUS)==0) {
         if(strncmp(req->payload,"manual_override,",16)==0) {
             timer->manual_override=true ;
@@ -228,7 +244,9 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
         }
         return OK;
     }
-
+	
+	// COMMAND: SET
+	// Used to set the begin and end times of the timer
     if(strcmp(req->command,"SET")==0) {
         // Validate and set begin time
         if(strcmp(req->arg1,"begin")==0) {
@@ -260,7 +278,8 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
         snprintf(resp->payload,sizeof(resp->payload),"invalid set parameter (use begin or end)");
         return OK;
     }
-
+	
+	// COMMAND: CHILD ADDED
     if (strcmp(req->command, CMD_CHILD_ADDED) == 0) {
         device_id child_id;
         int rc = parse_child_id_payload(req->payload, &child_id);
@@ -277,6 +296,7 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
             return OK;
         }
 
+		// A timer is designed to only control ONE specific device
         if (timer->base.child_count >= 1) {
             resp->status = ERR_NOT_ALLOWED;
             snprintf(resp->payload, sizeof(resp->payload), "timer can only have one child device");
@@ -292,7 +312,8 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
                  child_id);
         return OK;
     }
-
+	
+	// COMMAND: CHILD REMOVED
     if (strcmp(req->command, CMD_CHILD_REMOVED) == 0) {
         device_id child_id;
         int rc = parse_child_id_payload(req->payload, &child_id);
@@ -316,7 +337,8 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
                  child_id);
         return OK;
     }
-
+    
+    // COMMAND: LINK
     if (strcmp(req->command, CMD_LINK) == 0) {
         int parent_id;
         int rc = parse_link_parent_id(req, &parent_id);
@@ -340,6 +362,7 @@ static int timer_handle_message(device *dev,const domo_message *req,domo_message
     return OK;
 }
 
+// Initial setup for the timer
 static int timer_init(device *dev) {
     timer_device *timer = (timer_device *)dev;
 
@@ -353,7 +376,8 @@ static int timer_init(device *dev) {
     timer->base.info.manual_override = false;
     strcpy(timer->begin_time, "00:00");
     strcpy(timer->end_time, "00:00");
-
+	
+	// Dynamic memory allocation: a timer can only hold 1 child
     timer->base.child_capacity = 1;
     timer->base.child_count = 0;
     timer->base.child_ids = malloc(sizeof(device_id));
@@ -365,6 +389,7 @@ static int timer_init(device *dev) {
     return OK;
 }
 
+// Clean up memory before dying to prevent memory leaks
 static int timer_destroy(device *dev) {
     timer_device *timer = (timer_device *)dev;
 
@@ -380,19 +405,24 @@ static int timer_destroy(device *dev) {
     return OK;
 }
 
+/*	This function runs constantly inside the main select() loop.
+	It checks the real-world clock and automatically pushes states to the child. */
 static int timer_update(device *dev){
     timer_device *timer = (timer_device *)dev;
 
     if (timer == NULL){
         return ERR_INVALID_PARAMETERS;
     }
+    // If the timer hasn't been set yet, do nothing
     if (strcmp(timer->begin_time, "00:00")== 0 && strcmp(timer->end_time, "00:00")==0){
         return OK;
     }
+    // If a human manually changed the child's state, the timer stops interfering
     if (timer->manual_override) {
         return OK;
     }
 
+	// Get the current system time
     time_t now;
     struct tm *tm_now;
     char current_time_str[6];
@@ -404,28 +434,33 @@ static int timer_update(device *dev){
 
     bool is_on =false;
 
+	/*	Check if we are inside the ON window.
+		We have to handle two cases: normal day or overnight */
     if(compare_times(timer->begin_time, timer->end_time) <0){
+    	// Normal case (begin is earlier than end)
         if (compare_times(current_time_str, timer->begin_time) >= 0 && compare_times(current_time_str, timer->end_time)<0){
             is_on = true;
         }
     }else if (compare_times(timer->begin_time, timer->end_time)>0){
+    	// Overnight case (begin is later than end, crosses midnight)
         if (compare_times(current_time_str, timer->begin_time)>=0 || compare_times(current_time_str, timer->end_time)<0){
             is_on = true;
         }
     }
 
     state target_state = is_on ? STATE_ON : STATE_OFF;
-
+	
+	// If the clock says the state should change, AND we actually have a child to control
     if (timer->base.info.state != target_state && timer->base.child_count > 0){
         domo_message auto_req;
         memset(&auto_req, 0, sizeof(auto_req));
 
         snprintf(auto_req.command, sizeof(auto_req.command), "%s", CMD_SWITCH);
-        // Usa l'etichetta Universale Non importa chi sia il figlio
+      	 // Use the universal label so it works no matter who is the child
         snprintf(auto_req.arg1, sizeof(auto_req.arg1), "sys_state"); 
         snprintf(auto_req.arg2, sizeof(auto_req.arg2), is_on ? "on" : "off");
 
-        // Un solo invio. Zero overhead.
+        // Just one message sent. Zero overhead.
         int rc = timer_propagate_to_children(dev, &auto_req);
         
         if (rc == OK){
@@ -436,47 +471,46 @@ static int timer_update(device *dev){
     return OK;
 }
 
-
-
-
-
-
-
-
-
-
+// emtry
 int timer_device_main(device_id id) {
     timer_device timer;
     int fd,dummy_fd;
     int rc;
 
     memset(&timer,0,sizeof(timer));
+    
+    // Set up base device variables
     rc=device_common_init(&timer.base,id,DEVICE_TIMER) ;
     if(rc!=OK) {
         return rc;
     }
 
+	// Bind custom functions
     timer.base.handle_message=timer_handle_message;
     timer.base.destroy=timer_destroy;
-
     timer.base.update = timer_update;
 
+	// Run custom init (allocates memory for child array)
     rc=timer_init(&timer.base) ;
     if(rc!=OK) {
         return rc;
     }
-
+    
+	// Setup FIFO file
     rc=device_common_setup_fifo(&timer.base) ;
     if(rc!=OK) {
         return rc;
     }
-
+	
+	// Open FIFO for reading
     rc=device_common_open_fifo(&timer.base,&fd,&dummy_fd) ;
     if(rc!=OK) {
         return rc;
     }
-
+	
+	// Enter infinite loop (which will constantly call timer_update)
     rc=device_common_main_loop(&timer.base,fd) ;
+    // Cleanup on exit
     device_common_cleanup(&timer.base,fd,dummy_fd);
     return rc;
 }

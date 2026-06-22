@@ -26,6 +26,8 @@
 //end including
 int controller_delete_device(controller *ctrl, device_id id);
 
+/*	Create required folders for the project. 
+	If they already exist (EEXIST), it's fine, just continue. */
 static int ensure_runtime_dirs(void) {
     if (mkdir(RUNTIME_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
     if (mkdir(FIFO_DIR, 0777) != 0 && errno != EEXIST) return ERR_SYSTEM;
@@ -53,11 +55,14 @@ static pending_request *controller_alloc_pending(controller *ctrl);
 static pending_request *controller_find_pending_by_fd(controller *ctrl, int reply_fd);
 static void controller_clear_pending(pending_request *req);
 
+// Check if the open() error means the FIFO doesn't exist yet
 static int fifo_not_ready_errno(int err)
 {
     return err == ENOENT || err == ENXIO;
 }
 
+/*	Try to open the device's FIFO. If it's not ready, sleep 1 second and try again.
+	Stop trying after TIMEOUT_DEVICE seconds. */
 static int wait_device_fifo_ready(const char *fifo_path) {
     int retries = TIMEOUT_DEVICE;
 
@@ -76,6 +81,7 @@ static int wait_device_fifo_ready(const char *fifo_path) {
     return ERR_TIMEOUT;
 }
 
+// Undo everything if adding a new device fails halfway through
 static void controller_add_rollback(device_id id, pid_t pid, int routing_added) {
     char fifo_path[PATH_MAX];
 
@@ -92,6 +98,7 @@ static void controller_add_rollback(device_id id, pid_t pid, int routing_added) 
     }
 }
 
+// Search the devices array and return the index for the given device ID
 static int controller_find_device_index_by_id(const controller *controller, device_id id)
 {
     int i;
@@ -109,6 +116,7 @@ static int controller_find_device_index_by_id(const controller *controller, devi
     return -1;
 }
 
+// Remove a device from the array and shift the other elements to fill the gap
 static void controller_remove_device_at_index(controller *controller, int index)
 {
     int i;
@@ -128,6 +136,7 @@ static void controller_remove_device_at_index(controller *controller, int index)
     controller->device_count--;
 }
 
+// Delete the physical FIFO file
 static void controller_remove_device_fifo(const device *dev)
 {
     if (dev == NULL) {
@@ -139,6 +148,7 @@ static void controller_remove_device_fifo(const device *dev)
     }
 }
 
+// Do some cleanup when a device process crashes or gets killed
 int controller_finalize_dead_device(controller *ctrl, pid_t dead_pid, int status)
 {
     int index;
@@ -148,7 +158,7 @@ int controller_finalize_dead_device(controller *ctrl, pid_t dead_pid, int status
     int rc;
     int notify_rc;
 
-    (void)status;  //debug log(da togliere in teoria) Parameter unused after debug logs commented out
+    (void)status;  //debug log Parameter unused after debug logs commented out
 
     if (ctrl == NULL || dead_pid <= 0) {
         return ERR_INVALID_PARAMETERS;
@@ -194,6 +204,8 @@ Cosa stampa: ID, PID, segnale di terminazione, tipo di dispositivo
     //             device_type_str(dead_device.info.type));
     // }
 
+
+	// Tell the parent that its child died
     notify_rc = controller_notify_parent_child_removed(ctrl, dead_id, parent_id);
     if (notify_rc != OK && notify_rc != ERR_DEVICE_NOT_FOUND) {
         // Debug log - commented out
@@ -204,13 +216,15 @@ Cosa stampa: ID, PID, segnale di terminazione, tipo di dispositivo
 
 
     // addoption of orphan childs
+    // If the dead device was a parent, link its children to the main controller
     for (int i=0; i<ctrl->device_count; i++){
         if (ctrl->devices[i].info.logical_parent_id == dead_id){
 
             ctrl->devices[i].info.logical_parent_id = CONTROLLER_ID;
 
             routing_link_devices(ctrl->devices[i].info.id, CONTROLLER_ID);
-
+			
+			// Send a message to the orphan telling him his new parent is the controller
             domo_message adopt_msg;
             memset(&adopt_msg, 0, sizeof(adopt_msg));
             adopt_msg.kind = MSG_REQUEST;
@@ -227,18 +241,8 @@ Cosa stampa: ID, PID, segnale di terminazione, tipo di dispositivo
         }
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
+	
+	  // Remove the dead device completely
     rc = routing_remove_node(dead_id);
     if (rc != OK && rc != ERR_DEVICE_NOT_FOUND) {
         // Debug log - commented out
@@ -248,6 +252,7 @@ Cosa stampa: ID, PID, segnale di terminazione, tipo di dispositivo
     controller_remove_device_fifo(&dead_device);
     controller_remove_device_at_index(ctrl, index);
 
+	 // Update the text file
     rc = write_registry(ctrl);
     if (rc != OK) {
         // Debug log - commented out
@@ -260,6 +265,7 @@ Cosa stampa: ID, PID, segnale di terminazione, tipo di dispositivo
     return OK;
 }
 
+// Find device index using its PID
 static int controller_find_device_index_by_pid(const controller *ctrl, pid_t pid)
 {
     int i;
@@ -277,6 +283,8 @@ static int controller_find_device_index_by_pid(const controller *ctrl, pid_t pid
     return -1;
 }
 
+/*	Save the list of active devices to a file.
+	We write on a .tmp file first and then rename it, so we don't break the file if it crashes. */
 int write_registry(const controller *controller)
 {
     FILE *fp;
@@ -323,7 +331,8 @@ int write_registry(const controller *controller)
         unlink(tmp_path);
         return ERR_SYSTEM;
     }
-
+	
+	// Replace the old file with the new one
     if (rename(tmp_path, REGISTRY_FILE) != 0) {
         unlink(tmp_path);
         return ERR_SYSTEM;
@@ -332,6 +341,7 @@ int write_registry(const controller *controller)
     return OK;
 }
 
+// Send a CMD_DEL message via FIFO to tell the device to terminate
 static int controller_send_del_message(const device *dev) {
     domo_message req;
 
@@ -352,6 +362,8 @@ static int controller_send_del_message(const device *dev) {
     return send_message_to_fifo(dev->info.fifo_path, &req);
 }
 
+/*	Wait for the child process to exit. 
+	We use WNOHANG so we don't get stuck here forever. */
 static int controller_wait_device_exit(pid_t pid, int *status_out)
 {
     int status = 0;
@@ -364,18 +376,18 @@ static int controller_wait_device_exit(pid_t pid, int *status_out)
     while (waited < TIMEOUT_DEVICE) {
         pid_t w = waitpid(pid, &status, WNOHANG);
 
-        if (w == pid) {
+        if (w == pid) {	// Process is dead
             *status_out = status;
             return OK;
         }
 
-        if (w == 0) {
+        if (w == 0) {	// Still running, let's wait a bit
             sleep(1);
             waited++;
             continue;
         }
 
-        if (w < 0) {
+        if (w < 0) {	// Error
             if (errno == ECHILD) {
                 *status_out = 0;
                 return OK;
@@ -387,6 +399,7 @@ static int controller_wait_device_exit(pid_t pid, int *status_out)
     return ERR_TIMEOUT;
 }
 
+// Send a message to a parent to let it know a child was removed
 static int controller_notify_parent_child_removed(const controller *controller,
                                                   device_id child_id,
                                                   int parent_id)
@@ -422,6 +435,7 @@ static int controller_notify_parent_child_removed(const controller *controller,
     return OK;
 }
 
+// Delete a parent and all its children recursively
 static int controller_delete_children_cascade(controller *ctrl, device_id parent_id)
 {
     device_id children[CONTROLLER_MAX_DEVICES];
@@ -455,7 +469,9 @@ static int controller_delete_children_cascade(controller *ctrl, device_id parent
 
     return OK;
 }
-
+/*	SPAWN FUNCTIONS
+	These functions use fork() and execl() to start the child processes.
+	They are all basically the same, just the command line argument changes. */
 static int spawn_bulb_process(device_id id, pid_t *pid_out) {
     pid_t pid;
     char id_arg[32];
@@ -468,7 +484,7 @@ static int spawn_bulb_process(device_id id, pid_t *pid_out) {
     }
 
     if (pid == 0) {
-
+		// Ask the OS to kill me if my parent (the controller) dies
         prctl(PR_SET_PDEATHSIG, SIGTERM);
 
         if(getppid() ==1){
@@ -597,6 +613,7 @@ static int spawn_timer_process(device_id id, pid_t *pid_out) {
     return OK;
 }
 
+// Get the device pointer using its ID
 device *controller_find_device(controller *controller, device_id id) {
     int i;
 
@@ -613,6 +630,7 @@ device *controller_find_device(controller *controller, device_id id) {
     return NULL;
 }
 
+// Get the device pointer (read-only)
 const device *controller_find_device_const(const controller *controller, device_id id)
 {
     int i;
@@ -630,6 +648,7 @@ const device *controller_find_device_const(const controller *controller, device_
     return NULL;
 }
 
+// Generate a new request ID
 static int controller_next_request_id(void)
 {
     static int next_id = 1;
@@ -641,6 +660,7 @@ static int controller_next_request_id(void)
     return next_id++;
 }
 
+// Find an empty slot in the pending array to save an outgoing request
 static pending_request *controller_alloc_pending(controller *ctrl)
 {
     int i;
@@ -661,6 +681,7 @@ static pending_request *controller_alloc_pending(controller *ctrl)
     return NULL;
 }
 
+// Find a pending request based on the file descriptor of the reply FIFO
 static pending_request *controller_find_pending_by_fd(controller *ctrl, int reply_fd)
 {
     int i;
@@ -678,6 +699,7 @@ static pending_request *controller_find_pending_by_fd(controller *ctrl, int repl
     return NULL;
 }
 
+// Clean up a pending request structure
 static void controller_clear_pending(pending_request *req)
 {
     if (req == NULL) {
@@ -696,6 +718,7 @@ static void controller_clear_pending(pending_request *req)
     req->reply_fd = -1;
 }
 
+// Get all children of a node, put them in an array
 static int controller_collect_subtree(controller *ctrl,
                                       device_id root_id,
                                       device_id *ids,
@@ -730,6 +753,7 @@ static int controller_collect_subtree(controller *ctrl,
     return OK;
 }
 
+// Keep checking until all devices in the subtree are actually removed
 static int controller_wait_subtree_removed(controller *ctrl,
                                            const device_id *ids,
                                            int count)
@@ -764,6 +788,7 @@ static int controller_wait_subtree_removed(controller *ctrl,
     return ERR_TIMEOUT;
 }
 
+// Setup the controller struct at the beginning
 int controller_init(controller *controller)
 {
     if (controller == NULL) {
@@ -802,6 +827,7 @@ static int controller_count_direct_children(const controller *controller, device
     return count;
 }
 
+// Core function: add a new device
 int controller_add_device(controller *controller, device_type type) {
     device *dev;
     device_id id;
@@ -829,6 +855,7 @@ int controller_add_device(controller *controller, device_type type) {
 
     dev->info.logical_parent_id = CONTROLLER_ID;
 
+	// Fork based on device type
     switch (type) {
         case DEVICE_BULB:
             rc = spawn_bulb_process(dev->info.id, &pid);
@@ -854,7 +881,8 @@ int controller_add_device(controller *controller, device_type type) {
     }
 
     dev->info.pid = pid;
-
+	
+	// Wait for child FIFO
     rc = wait_device_fifo_ready(dev->info.fifo_path);
     if (rc != OK) {
         controller_add_rollback(id, pid, routing_added);
@@ -863,6 +891,7 @@ int controller_add_device(controller *controller, device_type type) {
         return rc;
     }
 
+	// Add to routing table
     rc = routing_add_node(id, type);
     if (rc != OK) {
         controller_add_rollback(id, pid, routing_added);
@@ -874,6 +903,7 @@ int controller_add_device(controller *controller, device_type type) {
 
     controller->device_count++;
 
+	// Write to file
     rc = write_registry(controller);
     if (rc != OK) {
         controller->device_count--;
@@ -888,6 +918,7 @@ int controller_add_device(controller *controller, device_type type) {
     return OK;
 }
 
+// Core function: delete a device
 int controller_delete_device(controller *ctrl, device_id id)
 {
     device *dev;
@@ -913,7 +944,8 @@ int controller_delete_device(controller *ctrl, device_id id)
     if (rc != OK) {
         return rc;
     }
-
+	
+	// If it's a Hub or Timer, delete its children too
     if (device_is_control(dev->info.type)) {
         rc = controller_delete_children_cascade(ctrl, id);
         if (rc != OK) {
@@ -923,23 +955,27 @@ int controller_delete_device(controller *ctrl, device_id id)
 
     pid = dev->info.pid;
 
+	// Tell it to kill itself via FIFO
     rc = controller_send_del_message(dev);
     if (rc != OK) {
         return rc;
     }
 
+	// Wait for the OS to kill the process
     rc = controller_wait_device_exit(pid, &status);
     if (rc != OK) {
         return rc;
     }
 
+	// Cleanup internal arrays
     if (controller_find_device_index_by_id(ctrl, id) >= 0) {
         rc = controller_finalize_dead_device(ctrl, pid, status);
         if (rc != OK && rc != ERR_DEVICE_NOT_FOUND) {
             return rc;
         }
     }
-
+	
+	// Wait until everything is fully removed
     rc = controller_wait_subtree_removed(ctrl, subtree_ids, subtree_count);
     if (rc != OK) {
         return rc;
@@ -949,6 +985,7 @@ int controller_delete_device(controller *ctrl, device_id id)
     return OK;
 }
 
+// Print all devices
 int controller_list_devices(controller *controller) {
     int i;
 
@@ -974,6 +1011,7 @@ int controller_list_devices(controller *controller) {
     return OK;
 }
 
+// Send an info request to a device and setup a temporary FIFO for the reply
 int controller_info_device(controller *controller, device_id id)
 {
     const device *dev;
@@ -997,6 +1035,7 @@ int controller_info_device(controller *controller, device_id id)
         return ERR_NOT_ALLOWED;
     }
 
+	// Setup the reply FIFO
     pend->request_id = controller_next_request_id();
     rc = make_reply_fifo_path(getpid(), pend->request_id,
                               pend->reply_fifo_path, sizeof(pend->reply_fifo_path));
@@ -1020,6 +1059,7 @@ int controller_info_device(controller *controller, device_id id)
     target_child_count = controller_count_direct_children(controller, id);
     timeout_sec = compute_request_timeout(dev->info.type, target_child_count);
 
+	// Prepare the message struct
     memset(&req, 0, sizeof(req));
     req.kind = MSG_REQUEST;
     snprintf(req.command, sizeof(req.command), "%s", CMD_INFO);
@@ -1046,6 +1086,8 @@ int controller_info_device(controller *controller, device_id id)
     return OK;
 }
 
+/*	Send a switch request to change device state.
+	similar to controller_info_device.*/ 
 int controller_switch_device(controller *controller, device_id id, const char *label, const char *pos)
 {
     const device *dev;
@@ -1122,6 +1164,7 @@ int controller_switch_device(controller *controller, device_id id, const char *l
     return OK;
 }
 
+// Function called when the reply FIFO has data. Read the reply and print it.
 int controller_complete_pending_fd(controller *ctrl, int reply_fd)
 {
     pending_request *pend;
@@ -1170,10 +1213,11 @@ int controller_complete_pending_fd(controller *ctrl, int reply_fd)
         return ERR_INVALID_PARAMETERS;
     }
 
-    controller_clear_pending(pend);
+    controller_clear_pending(pend);	// Free the slot
     return OK;
 }
 
+// Check if any pending request has timed out
 int controller_expire_pending(controller *ctrl)
 {
     int i;
@@ -1214,6 +1258,7 @@ int controller_expire_pending(controller *ctrl)
     return OK;
 }
 
+// Link a device to a parent (e.g. link bulb to a hub)
 int controller_link_devices(controller *controller, device_id child_id, device_id parent_id)
 {
     device *child;
@@ -1251,7 +1296,8 @@ int controller_link_devices(controller *controller, device_id child_id, device_i
     if (rc != OK) {
         return rc;
     }
-
+	
+	//1: Tell the child it has a new parent
     memset(&child_msg, 0, sizeof(child_msg));
     memset(&child_resp, 0, sizeof(child_resp));
 
@@ -1284,7 +1330,8 @@ int controller_link_devices(controller *controller, device_id child_id, device_i
         routing_link_devices(child_id, old_parent_id);
         return child_resp.status;
     }
-
+	
+	//2: Tell the parent it has a new child
     memset(&parent_msg, 0, sizeof(parent_msg));
     memset(&parent_resp, 0, sizeof(parent_resp));
 
@@ -1318,6 +1365,7 @@ int controller_link_devices(controller *controller, device_id child_id, device_i
         return parent_resp.status;
     }
 
+	// Update state and save
     child->info.logical_parent_id = parent_id;
 
     rc = write_registry(controller);
@@ -1331,6 +1379,7 @@ int controller_link_devices(controller *controller, device_id child_id, device_i
     return OK;
 }
 
+// Kill all processes when shutting down
 int controller_destroy(controller *controller)
 {
     int changed;
@@ -1363,6 +1412,7 @@ int controller_destroy(controller *controller)
     return OK;
 }
 
+// Start the controller and go to the event loop
 int controller_run(controller *ctrl) {
     if (ctrl == NULL) {
         return ERR_INVALID_PARAMETERS;
@@ -1374,6 +1424,7 @@ int controller_run(controller *ctrl) {
     return event_loop_run(ctrl);
 }
 
+// Calculate timeout for control devices.
 static int compute_control_timeout(int child_count)
 {
     if (child_count < 0) {
@@ -1383,11 +1434,12 @@ static int compute_control_timeout(int child_count)
     return MIN_RANDOM_DELAY_S + (MAX_RANDOM_DELAY_S * (child_count + 1));
 }
 
+// Assign the right timeout based on the device type
 static int compute_request_timeout(device_type type, int child_count)
 {
     if (type == DEVICE_HUB || type == DEVICE_TIMER || type == DEVICE_CONTROLLER) {
         return compute_control_timeout(child_count);
     }
 
-    return TIMEOUT_DEVICE;
+    return TIMEOUT_DEVICE; // Bulbs/Windows have a fixed timeout
 }

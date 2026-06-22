@@ -8,6 +8,7 @@
 #include "error_codes.h"
 #include "ipc.h"
 
+// Safely parses a string argument into a numeric device ID.
 static int parse_device_id(const char *s, device_id *out_id) {
     char *end = NULL;
     long value;
@@ -18,6 +19,8 @@ static int parse_device_id(const char *s, device_id *out_id) {
 
     errno = 0;
     value = strtol(s, &end, 10);
+    
+    // Check for conversion errors, leftover garbage characters, or negative IDs
     if (errno != 0 || end == s || *end != '\0' || value < 0) {
         return ERR_INVALID_PARAMETERS;
     }
@@ -26,6 +29,7 @@ static int parse_device_id(const char *s, device_id *out_id) {
     return OK;
 }
 
+// Reads the registry file to locate the target device's active FIFO path.
 static int lookup_device_fifo(device_id id, char *fifo_path, size_t fifo_path_len) {
     FILE *fp;
     int file_id;
@@ -35,12 +39,14 @@ static int lookup_device_fifo(device_id id, char *fifo_path, size_t fifo_path_le
     if (fifo_path == NULL || fifo_path_len == 0) {
         return ERR_INVALID_PARAMETERS;
     }
-
+	
+	// Open the registry file in read-only mode
     fp = fopen(REGISTRY_FILE, "r");
     if (fp == NULL) {
-        return ERR_IPC_FAILURE;
+        return ERR_IPC_FAILURE;	// File doesn't exist, controller is probably offline
     }
-
+	
+	// Read the file line by line: ID, PID, FIFO_PATH
     while (fscanf(fp, "%d %d %255s", &file_id, &pid_value, path) == 3) {
         if (file_id == id) {
             fclose(fp);
@@ -50,9 +56,11 @@ static int lookup_device_fifo(device_id id, char *fifo_path, size_t fifo_path_le
     }
 
     fclose(fp);
-    return ERR_DEVICE_NOT_FOUND;
+    return ERR_DEVICE_NOT_FOUND;	// Reached End-Of-File without finding the ID
 }
 
+/*	Constructs the IPC message struct based on the provided manual command.
+	Sets the sender to EXT_SENDER_ID to indicate an external manual override. */
 static int build_manual_request(device_id id,
                                 const char *command,
                                 const char *param1,
@@ -66,12 +74,14 @@ static int build_manual_request(device_id id,
     snprintf(msg->sender_id, sizeof(msg->sender_id), "%s", EXT_SENDER_ID);
     msg->target_id = id;
     msg->dst_id = id;
-
+	
+	// Command: info
     if (strcmp(command, "info") == 0) {
         snprintf(msg->command, sizeof(msg->command), "%s", CMD_INFO);
         return OK;
     }
-
+	
+	// Command: switch <label> <position>
     if (strcmp(command, "switch") == 0) {
         if (param1 == NULL || param2 == NULL) {
             return ERR_INVALID_PARAMETERS;
@@ -83,7 +93,8 @@ static int build_manual_request(device_id id,
         snprintf(msg->arg2, sizeof(msg->arg2), "%s", param2);
         return OK;
     }
-
+	
+	// Command: set <property> <value>
     if (strcmp(command, "set") == 0 || strcmp(command, "SET") == 0) {
         if (param1 == NULL || param2 == NULL) {
             return ERR_INVALID_PARAMETERS;
@@ -99,29 +110,34 @@ static int build_manual_request(device_id id,
     return ERR_INVALID_COMMAND;
 }
 
+// Entry point for the external manual command-line tool.
 int main(int argc, char **argv) {
     device_id id;
     domo_message request;
     char request_fifo[PATH_MAX];
     int rc;
 
+	// We need at least the program name, the device ID, and the command
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <id> <command> [parameters]\n", argv[0]);
         return ERR_INVALID_PARAMETERS;
     }
-
+	
+	// 1: Parse the target device ID safely
     rc = parse_device_id(argv[1], &id);
     if (rc != OK) {
         fprintf(stderr, "The devide id is not valid.\n");
         return rc;
     }
-
+	
+	// 2: Read the registry to figure out where to send the message
     rc = lookup_device_fifo(id, request_fifo, sizeof(request_fifo));
     if (rc != OK) {
         fprintf(stderr, "the device lookup failed: %s\n", error_str(rc));
         return rc;
     }
-
+	
+	// 3: Build the IPC message.
     rc = build_manual_request(id,
                               argv[2],
                               argc > 3 ? argv[3] : NULL,
@@ -131,7 +147,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Cannot build request: %s\n", error_str(rc));
         return rc;
     }
-
+	
+	// 4: Dispatches the constructed message to the target device's FIFO.
     rc = ipc_send_message(&request);
     if (rc != OK) {
         fprintf(stderr, "IPC send failed: %s\n", error_str(rc));
