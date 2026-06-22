@@ -3,9 +3,11 @@
 set -u
 
 # ==========================================
-# SETUP AMBIENTE
+# SETUP AMBIENTE E PATH RELATIVI
 # ==========================================
-ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# CORREZIONE: Ora risolve automaticamente la cartella `code/` 
+# andando un livello sopra la cartella dove si trova questo script.
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR" || exit 1
 
 OUT_DIR="runtime/test_outputs"
@@ -21,6 +23,9 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
+
+# Evita chiusure silenti in caso di SIGPIPE (se il controller muore)
+trap 'fail "Il Controller è crashato o non si è avviato (Errore SIGPIPE)."' PIPE
 
 fail() {
     echo -e "${RED}[FALLITO] $1${NC}"
@@ -62,6 +67,15 @@ assert_not_log() {
         fail "$error_msg"
     fi
 }
+
+# ==========================================
+# CONTROLLI PRELIMINARI
+# ==========================================
+if [ ! -x "./bin/domotics_controller" ]; then
+    echo -e "${RED}Errore: Eseguibile non trovato in ./bin/domotics_controller${NC}"
+    echo "Assicurati di trovarti nella cartella giusta e di aver eseguito 'make build'."
+    exit 1
+fi
 
 # ==========================================
 # INIZIALIZZAZIONE CONTROLLER
@@ -152,8 +166,6 @@ pass "Sezione 3: Switch singoli completati"
 # SEZIONE 4: Propagazione Hub e Risoluzione Conflitti
 # ==========================================
 echo "=> Esecuzione Sezione 4: Propagazione Hub"
-# Allo stato attuale: Hub(1) ha come figli diretti Bulb(3) e Timer(2).
-# Il Timer(2) ha Window(4).
 send_cmd "switch 1 sys_state on"
 sleep 8 # Propagazione profonda richiede tempo: Hub -> figli (1-3s) + esecuzione (1-3s)
 
