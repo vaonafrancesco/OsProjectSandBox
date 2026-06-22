@@ -49,8 +49,9 @@ static int bulb_build_info_payload(bulb_device *bulb, char *buf, size_t len)
     update_usage_time(bulb);
 
     snprintf(buf, len,
-             "bulb id=%d state=%s manual_override=%s time=%lu",
+             "bulb id=%d parent=%d state=%s manual_override=%s time=%lu",
              bulb->base.info.id,
+             bulb->base.info.logical_parent_id,
              state_str(bulb->base.info.state),
              bulb->base.info.manual_override ? "true" : "false",
              bulb->total_usage_time);
@@ -209,7 +210,7 @@ static int bulb_init(device *dev)
     if (bulb == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
-
+    bulb->base.info.logical_parent_id=0;
     bulb->last_state_change = 0;
     bulb->total_usage_time = 0;
     return OK;

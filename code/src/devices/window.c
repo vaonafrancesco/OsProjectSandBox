@@ -57,8 +57,8 @@ static int window_build_info_payload(window_device *window, char *buf, size_t le
     update_usage_time(window)  ;
 
     snprintf(buf, len,
-             "window id=%d state=%s time=%lu open_switch=%d close_switch=%d",
-             window->base.info.id, state_str(window->base.info.state), window->total_open_time,
+             "window id=%d parent=%d state=%s time=%lu open_switch=%d close_switch=%d",
+             window->base.info.id, window->base.info.logical_parent_id, state_str(window->base.info.state), window->total_open_time,
              window->open_switch_state, window->close_switch_state);
     return OK;
 }
@@ -177,7 +177,7 @@ static int window_init(device *dev){
         return ERR_INVALID_PARAMETERS;    }
 
     window->base.info.state = STATE_CLOSED;
-
+    window->base.info.logical_parent_id=0;
     window-> last_state_change=0;
     window->total_open_time=0 ;
     window->open_switch_state = 0;

@@ -256,6 +256,42 @@ int event_loop_run(controller *ctrl)
             prompt_visible = 0;
 
             if (!ctrl->running) {
+               int retries = 5; 
+                while (retries-- > 0) {
+                    fd_set flush_fds;
+                    int flush_max_fd = -1;
+                    int pending_count = 0;
+                    struct timeval tv;
+                    int j;
+
+                    FD_ZERO(&flush_fds);
+                    for (j = 0; j < CONTROLLER_MAX_PENDING; ++j) {
+                        if (ctrl->pending[j].in_use && ctrl->pending[j].reply_fd >= 0) {
+                            FD_SET(ctrl->pending[j].reply_fd, &flush_fds);
+                            if (ctrl->pending[j].reply_fd > flush_max_fd) {
+                                flush_max_fd = ctrl->pending[j].reply_fd;
+                            }
+                            pending_count++;
+                        }
+                    }
+                
+                    if (pending_count == 0) {
+                        break; 
+                    }
+                   
+                    tv.tv_sec = 0;
+                    tv.tv_usec = 100000; 
+                                 
+                    if (select(flush_max_fd + 1, &flush_fds, NULL, NULL, &tv) > 0) {
+                        for (j = 0; j < CONTROLLER_MAX_PENDING; ++j) {
+                            if (ctrl->pending[j].in_use && ctrl->pending[j].reply_fd >= 0) {
+                                if (FD_ISSET(ctrl->pending[j].reply_fd, &flush_fds)) {
+                                    controller_complete_pending_fd(ctrl, ctrl->pending[j].reply_fd);
+                                }
+                            }
+                        }
+                    }
+                }
                 break;
             }
 

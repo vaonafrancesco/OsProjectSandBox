@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-
 set -u
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT_DIR" || exit 1
 
 ID="${1:-}"
 CMD="${2:-}"
@@ -12,7 +14,11 @@ if [[ -z "$ID" || -z "$CMD" ]]; then
   exit 2
 fi
 
-./bin/manual_client "$ID" "$CMD" "$PARAM1" "$PARAM2"
+ARGS=("$ID" "$CMD")
+[[ -n "$PARAM1" ]] && ARGS+=("$PARAM1")
+[[ -n "$PARAM2" ]] && ARGS+=("$PARAM2")
+
+./bin/manual_client "${ARGS[@]}"
 EXIT_CODE=$?
 
 case "$EXIT_CODE" in

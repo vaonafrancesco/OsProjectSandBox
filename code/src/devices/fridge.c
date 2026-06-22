@@ -64,8 +64,9 @@ static int fridge_build_info_payload(const fridge_device *fridge, char *buf, siz
     update_open_time((fridge_device *)fridge);
 
     snprintf(buf, len,
-             "fridge id=%d state=%s time_since_open=%lu delay=%d time= %lu perc=%d temp=%d thermostat=%d",
+             "fridge id=%d parent=%d state=%s time_since_open=%lu delay=%d time= %lu perc=%d temp=%d thermostat=%d",
              fridge->base.info.id, 
+             fridge->base.info.logical_parent_id,
              state_str(fridge->base.info.state), 
              current_open_time,
              fridge->delay_seconds,
@@ -234,7 +235,8 @@ static int fridge_init(device *dev)
     if(fridge == NULL) {
         return ERR_INVALID_PARAMETERS;
     }
-
+    
+    fridge->base.info.logical_parent_id=0;
     fridge->base.info.state = STATE_OFF;
 
     // initialize fridge state

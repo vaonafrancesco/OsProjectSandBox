@@ -82,18 +82,9 @@ run: build
 	bash scripts/run_demo.sh $(ARGS)
 
 test: build
-	bash tests/test_linking.sh
-	bash tests/test_override.sh
-	bash tests/test_cycle_detection.sh
-	bash tests/test_crash_handling.sh
-	bash tests/test_cascade_delete.sh
-	bash tests/test_timer_validation.sh
+	bash tests/run_all_tests.sh
 
 clean:
 	-bash scripts/cleanup_ipc.sh
 	rm -rf $(BIN_DIR)
 	rm -rf $(BUILD_DIR)
-	rm -rf $(RUNTIME_DIR)/fifos/*
-	rm -rf $(RUNTIME_DIR)/logs/*
-	rm -rf $(RUNTIME_DIR)/pids/*
-	rm -rf $(RUNTIME_DIR)/registry/*

@@ -432,8 +432,9 @@ static int hub_build_info_payload(hub_device *hub, char *buf, size_t len)
 
     rc = hub_check_children_consistency(&hub->base, &consistent);
     if (rc != OK) {
-        snprintf(buf, len, "hub id=%d state=%s",
+        snprintf(buf, len, "hub id=%d parent=%d state=%s",
                  hub->base.info.id,
+                 hub->base.info.logical_parent_id,
                  state_str(hub->base.info.state));
         return OK;
     }
@@ -442,10 +443,13 @@ static int hub_build_info_payload(hub_device *hub, char *buf, size_t len)
     hub->base.info.manual_override = !consistent;
 
     if (!consistent) {
-        snprintf(buf, len, "hub id=%d state=manual_override", hub->base.info.id);
+        snprintf(buf, len, "hub id=%d parent=%d state=manual_override",
+                    hub->base.info.id,
+                    hub->base.info.logical_parent_id);
     } else {
-        snprintf(buf, len, "hub id=%d state=%s",
+        snprintf(buf, len, "hub id=%d parent=%d state=%s",
                  hub->base.info.id,
+                 hub->base.info.logical_parent_id,
                  state_str(hub->base.info.state));
     }
 
@@ -607,6 +611,7 @@ static int hub_init(device *dev)
         return ERR_INVALID_PARAMETERS;
     }
 
+    hub->base.info.logical_parent_id=0;
     memset(hub->children, 0, sizeof(hub->children));
     hub->child_count = 0;
     hub->manual_override = false;

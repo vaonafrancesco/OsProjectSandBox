@@ -121,11 +121,11 @@ static int timer_build_info_payload(timer_device *timer,char *buf,size_t len) {
     }
 
     if(timer->manual_override) {
-        snprintf(buf,len,"timer id=%d state=manual_override begin=%s end=%s",
-                 timer->base.info.id,timer->begin_time,timer->end_time);
+        snprintf(buf,len,"timer id=%d parent=%d state=manual_override begin=%s end=%s",
+                 timer->base.info.id,timer->base.info.logical_parent_id, timer->begin_time,timer->end_time);
     } else {
-        snprintf(buf,len,"timer id=%d state=%s begin=%s end=%s",
-                 timer->base.info.id,state_str(timer->base.info.state),
+        snprintf(buf,len,"timer id=%d parent=%d state=%s begin=%s end=%s",
+                 timer->base.info.id, timer->base.info.logical_parent_id, state_str(timer->base.info.state),
                  timer->begin_time,timer->end_time) ;
     }
 
@@ -347,6 +347,7 @@ static int timer_init(device *dev) {
         return ERR_INVALID_PARAMETERS;
     }
 
+    timer->base.info.logical_parent_id=0;
     timer->manual_override = false;
     timer->base.info.state = STATE_OFF;
     timer->base.info.manual_override = false;
