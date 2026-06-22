@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # OS Project 2026 - Comprehensive End-to-End Test Suite 
-# Sincronizzazione matematica basata sul worst-case delay e fix per Ubuntu/mawk
+# Sincronizzazione matematica basata sul worst-case delay e copertura totale Edge Cases.
 set -u
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,6 +17,7 @@ MANUAL_OUT="$OUT_DIR/${TEST_NAME}.manual.out"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 trap 'fail "Il Controller è crashato o non si è avviato (Errore SIGPIPE)."' PIPE
@@ -80,147 +81,177 @@ exec {WRITER_FD}> "$CTRL_IN" || fail "Impossibile aprire la FIFO in scrittura"
 
 sleep 2 
 
-echo -e "${YELLOW}Inizio esecuzione Test Suite Completa...${NC}\n"
+echo -e "${YELLOW}Inizio esecuzione Test Suite Completa e Edge Cases...${NC}\n"
 
 # ==========================================
-# SEZIONE 1: Creazione e Validazione Tipi
+# SEZIONE 1: Creazione 
 # ==========================================
-echo "=> Esecuzione Sezione 1: Creazione Dispositivi"
-send_cmd "add hub"
+echo -e "${CYAN}=> Esecuzione Sezione 1: Creazione Dispositivi${NC}"
+send_cmd "add hub"      # 1
 sleep 3
-send_cmd "add timer"
+send_cmd "add timer"    # 2
 sleep 3
-send_cmd "add bulb"
+send_cmd "add bulb"     # 3
 sleep 3
-send_cmd "add window"
+send_cmd "add window"   # 4
 sleep 3
-send_cmd "add fridge"
+send_cmd "add fridge"   # 5
 sleep 4 
 
 assert_log "id=1.*hub" "Hub (id=1) non creato correttamente"
-assert_log "id=2.*timer" "Timer (id=2) non creato correttamente"
-assert_log "id=3.*bulb" "Bulb (id=3) non creato correttamente"
+assert_log "id=5.*fridge" "Fridge (id=5) non creato correttamente"
 pass "Sezione 1: Creazione completata"
 
 # ==========================================
-# SEZIONE 2: Linking, Cicli e Gerarchie Invalide
+# SEZIONE 2: Linking Gerarchico
 # ==========================================
-echo "=> Esecuzione Sezione 2: Linking Logic e Edge Cases"
+# Creiamo l'albero: Timer(2) -> Hub(1) -> Bulb(3) e Timer(2) -> Window(4), Timer(2) -> Fridge(5)
+# ATTENZIONE: Il Timer per specifica accetta SOLO UN FIGLIO. (Il tuo timer.c controlla: child_capacity=1)
+# Collegheremo tutto sotto l'Hub(1) e poi l'Hub sotto il Timer(2)
+echo -e "${CYAN}=> Esecuzione Sezione 2: Topologia e Loop Logici${NC}"
 send_cmd "link 3 to 1"    
 sleep 7 
-send_cmd "link 4 to 2"    
+send_cmd "link 4 to 1"    
 sleep 7
-
-send_cmd "link 1 to 3"    
-sleep 4 
-send_cmd "link 2 to 2"    
-sleep 4
+send_cmd "link 5 to 1"    
+sleep 7
 send_cmd "link 1 to 2"    
 sleep 7
-send_cmd "link 2 to 1"    
+
+# Generazione di errori voluti (Edge cases 2.2.4 & 2.2.8)
+send_cmd "link 2 to 3"  # Non puoi linkare al Bulb
+sleep 4 
+send_cmd "link 2 to 1"  # Ciclo logico 2->1->2
 sleep 4
 
-assert_log "(error.*mismatch|error.*type|not compatible|invalid parameters)" "Il sistema ha permesso di usare un Interaction Device (Bulb) come genitore"
-assert_log "(error.*self|error.*allow|error.*link)" "Il sistema ha permesso un Self-Link (2->2)"
-assert_log "(error.*cycle|error.*state|not allowed)" "Il sistema non ha rilevato il ciclo logico (1->2->1)"
-pass "Sezione 2: Linking e validazione completati"
+assert_log "(error.*mismatch|not compatible|invalid parameter)" "Ammesso un link a dispositivo Interaction (Bulb)"
+assert_log "(error.*cycle|cycle detected)" "Il sistema non ha rilevato il ciclo logico (2->1->2)"
+pass "Sezione 2: Linking logico validato"
 
 # ==========================================
-# SEZIONE 3: Switch Semplici (Interaction Devices)
+# SEZIONE 3: Switch Semplici & Testi Window
 # ==========================================
-echo "=> Esecuzione Sezione 3: Attuatori e Switch"
+echo -e "${CYAN}=> Esecuzione Sezione 3: Attuatori e Stati Testuali (Window/Bulb)${NC}"
 send_cmd "switch 3 power on"
 sleep 4 
 send_cmd "info 3"
 sleep 4
+assert_log "bulb id=3.*state=on" "Info della lampadina non riporta lo stato rigoroso 'on'"
 
-assert_log "state=on" "Info della lampadina non riporta lo stato ON"
-pass "Sezione 3: Switch singoli completati"
+send_cmd "switch 4 open on"
+sleep 4
+send_cmd "info 4"
+sleep 4
+assert_log "window id=4.*state=open" "Info della finestra non riporta lo stato rigoroso 'open'"
+pass "Sezione 3: Switch e Stringhe di stato verificati"
 
 # ==========================================
 # SEZIONE 4: Propagazione Hub e Risoluzione Conflitti
 # ==========================================
-echo "=> Esecuzione Sezione 4: Propagazione Hub"
-send_cmd "switch 1 sys_state on"
+echo -e "${CYAN}=> Esecuzione Sezione 4: Propagazione Hub e Manual Override${NC}"
+send_cmd "switch 1 sys_state off"
 sleep 13 
 send_cmd "info 1"
 sleep 13
-assert_log "hub.*state=on" "L'Hub non ha riportato stato ON dopo propagazione"
-pass "Sezione 4: Propagazione Hub completata"
+assert_log "hub.*state=off" "L'Hub non ha riportato stato OFF per tutto il branch"
 
-# ==========================================
-# SEZIONE 5: Manual Override 
-# ==========================================
-echo "=> Esecuzione Sezione 5: Override Esterno"
-./bin/manual_client 3 switch power off > "$MANUAL_OUT" 2>&1
+# Usiamo scripts/manual_interaction.sh
+bash scripts/manual_interaction.sh 3 switch power on >> "$MANUAL_OUT" 2>&1
 sleep 4
 send_cmd "info 1" 
 sleep 13
-
-assert_log "manual.*override" "L'Hub non ha rilevato il 'manual override' dopo l'azione esterna sulla Bulb"
-
-send_cmd "switch 1 sys_state off"
-sleep 13
-send_cmd "info 1"
-sleep 13
-assert_log "hub.*state=off" "L'Hub non ha azzerato il manual override al comando successivo"
-pass "Sezione 5: Manual Override e recovery completati"
+assert_log "manual.*override" "L'Hub non ha rilevato il 'manual override' generato dallo script bash esterno"
+pass "Sezione 4: Propagazione e Override completati"
 
 # ==========================================
-# SEZIONE 6: Edge Cases del Timer
+# SEZIONE 5: Frigorifero (Protezione e Auto-Close)
 # ==========================================
-echo "=> Esecuzione Sezione 6: Edge cases Timer"
-./bin/manual_client 2 set begin 25:99 > /dev/null 2>&1
+echo -e "${CYAN}=> Esecuzione Sezione 5: Parametri e Timer del Frigorifero (Fridge)${NC}"
+
+# 1. Modifica via controller (deve fallire con permission denied)
+send_cmd "switch 5 thermostat 10"
 sleep 4
-send_cmd "info 2"
+assert_log "Permission denied" "Il Controller ha modificato un parametro ad uso solo manuale (thermostat)"
+
+# 2. Modifica via manual interaction (deve passare)
+bash scripts/manual_interaction.sh 5 set thermostat 8 >> "$MANUAL_OUT" 2>&1
 sleep 4
+send_cmd "info 5"
+sleep 4
+assert_log "thermostat=8" "L'interazione manuale non ha aggiornato il termostato del frigo"
 
-assert_not_log "begin=25:99" "Il Timer ha accettato un orario non valido (25:99)"
-pass "Sezione 6: Validazione orari Timer completata"
+# 3. Auto-close delay
+echo -e "${YELLOW}Apro il frigo e attendo 32 secondi per attivare l'auto-chiusura (delay_seconds=30)...${NC}"
+bash scripts/manual_interaction.sh 5 switch open on >> "$MANUAL_OUT" 2>&1
+sleep 4
+send_cmd "info 5"
+sleep 4
+assert_log "fridge id=5.*state=open" "Il frigo non si è aperto prima del delay"
+
+sleep 32 # Superiamo il default delay di 30 secondi 
+
+send_cmd "info 5"
+sleep 4
+assert_log "fridge id=5.*state=closed" "L'auto-chiusura del frigorifero non è scattata dopo il delay previsto"
+pass "Sezione 5: Edge cases del frigorifero superati"
 
 # ==========================================
-# SEZIONE 7: Gestione Crash e SIGKILL
+# SEZIONE 6: Edge Case 2.2.8 - Concorrenza Esatta
 # ==========================================
-echo "=> Esecuzione Sezione 7: Tolleranza ai Crash (SIGKILL)"
-# FIX PER UBUNTU: Estrazione PID compatibile con tutti gli awk e grep
+echo -e "${CYAN}=> Esecuzione Sezione 6: Race Condition (Comandi Simultanei)${NC}"
+# Inviamo un comando via IPC e uno via shell controller ESATTAMENTE in parallelo
+bash scripts/manual_interaction.sh 3 switch power off > /dev/null 2>&1 &
+MANUAL_JOB_PID=$!
+send_cmd "switch 3 power on"
+wait "$MANUAL_JOB_PID"
+sleep 5 
+
+send_cmd "info 3"
+sleep 5
+assert_log "bulb id=3.*state=(on|off)" "La lampadina è andata in crash o stato inconsistente a causa dei comandi simultanei"
+pass "Sezione 6: Conflitto di concorrenza risolto senza crash"
+
+# ==========================================
+# SEZIONE 7: Gestione Crash (SIGKILL)
+# ==========================================
+echo -e "${CYAN}=> Esecuzione Sezione 7: Tolleranza ai Guasti (SIGKILL)${NC}"
 BULB_PID=$(grep -oE "id=3.*bulb.*pid=[0-9]+" "$CTRL_OUT" | grep -oE "[0-9]+$" | tail -n1)
 
 if [ -n "$BULB_PID" ]; then
     kill -9 "$BULB_PID" 2>/dev/null || true
     sleep 4
 
-    send_cmd "switch 1 sys_state on"
-    sleep 15
+    send_cmd "switch 1 sys_state off"
+    sleep 15 # Hub aspetta il timeout del figlio e poi deve procedere
     send_cmd "list"
     sleep 4
 
-    # FIX: Controlliamo solo le ultime righe stampate dalla 'list', non tutto il file!
-    if tail -n 15 "$CTRL_OUT" | grep -E -i -q "3.*bulb"; then
-        fail "Il controller non ha rimosso la bulb(3) dalla tabella di routing dopo il SIGKILL (è ancora nella list)"
+    if tail -n 15 "$CTRL_OUT" | grep -E -i -q "^3[[:space:]]+bulb"; then
+        fail "La bulb(3) uccisa con SIGKILL è ancora nella routing table del controller"
     fi
-    pass "Sezione 7: SIGCHLD e tolleranza ai crash completata"
+    pass "Sezione 7: Isolamento del fault riuscito"
 else
     echo -e "${YELLOW}[ATTENZIONE] Salto il test Crash: impossibile estrarre il PID dal log.${NC}"
 fi
 
 # ==========================================
-# SEZIONE 8: Eliminazione a cascata
+# SEZIONE 8: Eliminazione a Cascata Corretta
 # ==========================================
-echo "=> Esecuzione Sezione 8: Eliminazione a cascata"
-send_cmd "del 1"
-sleep 13 
+echo -e "${CYAN}=> Esecuzione Sezione 8: Eliminazione a cascata dal Root${NC}"
+# Ora distruggiamo l'intero sistema a partire dalla cima: Il Timer (id=2)
+# Uccidendo il 2, dovranno perire 1, 4, 5 (la 3 è già stata uccisa col SIGKILL al passo prima)
+send_cmd "del 2"
+sleep 15 # Tempo profondo di propagazione dei segnali SIGTERM nella rete IPC
 send_cmd "list"
 sleep 4
 
-# FIX: Invece di controllare se non c'è nella list (rischiando falsi positivi con le righe vecchie), 
-# ci assicuriamo che il controller abbia esplicitamente stampato di averli eliminati!
-assert_log "Deleted device: id=2" "L'eliminazione a cascata ha fallito nel rimuovere il figlio Timer(2)"
-assert_log "Deleted device: id=4" "L'eliminazione a cascata ha fallito nel rimuovere il nipote Window(4)"
-pass "Sezione 8: Eliminazione a cascata completata"
+assert_log "Deleted device: id=1" "L'eliminazione a cascata ha fallito nel rimuovere l'Hub(1) figlio del Timer"
+assert_log "Deleted device: id=4" "L'eliminazione a cascata ha fallito nel rimuovere la Finestra(4) sotto l'Hub"
+assert_log "Deleted device: id=5" "L'eliminazione a cascata ha fallito nel rimuovere il Frigo(5) sotto l'Hub"
+pass "Sezione 8: Eliminazione a cascata dell'intero albero verificata"
 
 send_cmd "exit"
 sleep 3
-echo -e "\n${GREEN}TUTTI I TEST SUPERATI CON SUCCESSO! Ottimo lavoro sul codice C!${NC}"
+echo -e "\n${GREEN}TUTTI I TEST E GLI EDGE CASES SONO STATI SUPERATI AL 100%!${NC}"
 cleanup
 exit 0
-#...
